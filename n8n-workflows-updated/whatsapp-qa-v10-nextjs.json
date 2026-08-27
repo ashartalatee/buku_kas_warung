@@ -1,0 +1,420 @@
+{
+  "name": "Proyek1 - WhatsApp Q&A",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "waha-webhook-proyek1",
+        "responseMode": "onReceived"
+      },
+      "name": "Webhook Pesan Masuk (WAHA)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "notes": "Set URL ini sebagai webhook di konfigurasi WAHA."
+    },
+    {
+      "parameters": {
+        "jsCode": "const nomorDiizinkan = [\n  'REDACTED_PHONE_NUMBER',\n  '6289678438317@c.us',\n  '178322847871231@lid'\n  // tambah nomor/lid lain di sini, pisahkan dengan koma\n];\n\nconst body = $input.first().json.body;\nconst pengirim = body?.payload?.from || '';\nconst hasMedia = body?.payload?.hasMedia || false;\nconst media = body?.payload?.media || null;\n\nconst diizinkan = nomorDiizinkan.includes(pengirim);\n\nreturn [{ json: { diizinkan, pengirim, pesanMasuk: (body?.payload?.body || ''), hasMedia, media } }];"
+      },
+      "name": "Cek Nomor Diizinkan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ],
+      "notes": "Filter keamanan whitelist. Sekarang juga meneruskan info file (hasMedia, media) kalau pesannya berupa dokumen."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.diizinkan }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "name": "IF Nomor Diizinkan",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        680,
+        300
+      ],
+      "notes": "TRUE = lanjut proses & balas. FALSE = workflow berhenti diam-diam."
+    },
+    {
+      "parameters": {
+        "jsCode": "const media = $json.media;\nconst mimetype = media?.mimetype || '';\nconst validExcelCsv = mimetype.includes('csv') || mimetype.includes('spreadsheet') || mimetype.includes('excel');\nconst adaFileValid = $json.hasMedia && validExcelCsv;\n\nreturn [{ json: { ...$json, adaFileValid } }];"
+      },
+      "name": "Cek Tipe File",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ],
+      "notes": "Deteksi apakah pesan ini berisi file CSV/Excel yang valid, atau pesan teks biasa."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.adaFileValid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "name": "IF Ada File",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        300
+      ],
+      "notes": "TRUE = alur upload file (kanan bawah). FALSE = alur tanya-jawab teks biasa (kanan atas, seperti sebelumnya)."
+    },
+    {
+      "parameters": {
+        "jsCode": "const pesanMasuk = ($json.pesanMasuk || '').toLowerCase();\n\nlet jenisPertanyaan = 'tidak_dikenali';\n\nif (pesanMasuk.includes('minggu')) {\n  jenisPertanyaan = 'ringkasan_minggu';\n} else if (pesanMasuk.includes('penjualan') || pesanMasuk.includes('revenue') || pesanMasuk.includes('omset')) {\n  jenisPertanyaan = 'revenue_hari_ini';\n} else if (pesanMasuk.includes('produk terlaris') || pesanMasuk.includes('laris')) {\n  jenisPertanyaan = 'top_produk';\n} else if (pesanMasuk.includes('order') || pesanMasuk.includes('transaksi')) {\n  jenisPertanyaan = 'jumlah_orders';\n}\n\nreturn [{ json: { jenisPertanyaan, pengirim: $json.pengirim } }];"
+      },
+      "name": "Deteksi Jenis Pertanyaan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=http://host.docker.internal:3000/api/reports/{{ $json.jenisPertanyaan === 'ringkasan_minggu' ? 'weekly' : 'daily' }}"
+      },
+      "name": "Ambil Metrik dari API Next.js",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const hasil = $input.first().json;\nconst jenisPertanyaan = $('Deteksi Jenis Pertanyaan').first().json.jenisPertanyaan;\nconst formatRupiah = (angka) => 'Rp' + angka.toLocaleString('id-ID');\nconst LINK_DASHBOARD = 'http://192.168.0.103:3001';\n\nlet balasan = '';\n\nswitch (jenisPertanyaan) {\n  case 'ringkasan_minggu':\n    const daftarMinggu = hasil.top_produk.map((p, i) => `${i + 1}. ${p.produk} (${p.qty_terjual}x)`).join('\\n');\n    balasan = `📅 *Ringkasan Minggu Ini*\\n${hasil.periode}\\n\\n💰 Revenue: *${formatRupiah(hasil.total_revenue)}*\\n🧾 Orders: ${hasil.total_orders}\\n📈 AOV: ${formatRupiah(hasil.aov)}\\n\\n🏆 *Produk Terlaris:*\\n${daftarMinggu}`;\n    break;\n  case 'revenue_hari_ini':\n    const topHarian = hasil.top_produk.map((p, i) => `${i + 1}. ${p.produk} (${p.qty_terjual} terjual)`).join('\\n');\n    balasan = `📊 *Laporan Penjualan Hari Ini*\\n${hasil.tanggal}\\n\\n💰 Revenue: ${formatRupiah(hasil.total_revenue)}\\n🧾 Orders: ${hasil.total_orders}\\n📈 AOV: ${formatRupiah(hasil.aov)}\\n\\n🏆 *Produk Terlaris:*\\n${topHarian}`;\n    break;\n  case 'top_produk':\n    const daftar = hasil.top_produk.map((p, i) => `${i + 1}. ${p.produk} — ${p.qty_terjual}x`).join('\\n');\n    balasan = `🏆 *Produk Terlaris*\\n${hasil.tanggal}\\n\\n${daftar}`;\n    break;\n  case 'jumlah_orders':\n    balasan = `🧾 *Transaksi ${hasil.tanggal}*\\n\\nJumlah: ${hasil.total_orders} transaksi\\nRata-rata belanja: ${formatRupiah(hasil.aov)}`;\n    break;\n  default:\n    balasan = '🤔 Maaf, saya belum paham pertanyaannya.\\n\\nCoba tanya soal *\"penjualan hari ini\"*, *\"produk terlaris\"*, *\"minggu ini\"*, atau kirim file CSV/Excel untuk update data.';\n}\n\nif (jenisPertanyaan !== 'tidak_dikenali') {\n  balasan += `\\n\\n➖➖➖➖➖\\n📱 Buka dashboard lengkap:\\n${LINK_DASHBOARD}`;\n}\n\nreturn [{ json: { balasan, pengirim: $('Deteksi Jenis Pertanyaan').first().json.pengirim } }];"
+      },
+      "name": "Susun Jawaban Teks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1780,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/sendText",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Api-Key",
+              "value": "REDACTED_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "session",
+              "value": "REDACTED_SESSION_ID"
+            },
+            {
+              "name": "chatId",
+              "value": "={{ $json.pengirim }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.balasan }}"
+            }
+          ]
+        }
+      },
+      "name": "Balas Teks via WAHA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2000,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.media.url.replace('localhost', 'host.docker.internal') }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "name": "Download File dari WAHA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1340,
+        420
+      ],
+      "notes": "PENTING: di n8n, buka node ini dan pastikan opsi 'Response Format' di tab Options diset ke 'File' supaya hasilnya jadi binary data, bukan teks."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/transactions/upload",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        }
+      },
+      "name": "Upload ke Database",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        420
+      ],
+      "notes": "PENTING: 'inputDataFieldName' harus sama persis dengan nama binary property dari node sebelumnya (defaultnya 'data' di n8n, tapi CEK LAGI di komputer kamu -- klik node 'Download File dari WAHA', lihat tab Output/Binary, sesuaikan namanya di sini kalau beda."
+    },
+    {
+      "parameters": {
+        "jsCode": "const hasil = $input.first().json;\nconst pengirim = $('Cek Nomor Diizinkan').first().json.pengirim;\n\nlet balasan = '';\nif (hasil.error) {\n  balasan = `\\u274c *Upload gagal*\\n\\n${hasil.error}`;\n} else {\n  balasan = `\\u2705 *Data berhasil diproses!*\\n\\n${hasil.active_count} transaksi masuk laporan.`;\n  if (hasil.needs_review_count > 0) {\n    balasan += `\\n\\u26a0\\ufe0f ${hasil.needs_review_count} transaksi butuh review sebelum masuk laporan (cek dashboard).`;\n  }\n  if (hasil.duplicate_flag_count > 0) {\n    balasan += `\\n\\ud83d\\udd0e ${hasil.duplicate_flag_count} kemungkinan duplikat ditemukan (cek dashboard).`;\n  }\n  balasan += `\\n\\nKetik \"penjualan hari ini\" untuk lihat laporan terbaru.`;\n}\n\nreturn [{ json: { balasan, pengirim } }];"
+      },
+      "name": "Format Konfirmasi Upload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1780,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/sendText",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Api-Key",
+              "value": "REDACTED_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "session",
+              "value": "REDACTED_SESSION_ID"
+            },
+            {
+              "name": "chatId",
+              "value": "={{ $json.pengirim }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.balasan }}"
+            }
+          ]
+        }
+      },
+      "name": "Balas Konfirmasi via WAHA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2000,
+        420
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Pesan Masuk (WAHA)": {
+      "main": [
+        [
+          {
+            "node": "Cek Nomor Diizinkan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cek Nomor Diizinkan": {
+      "main": [
+        [
+          {
+            "node": "IF Nomor Diizinkan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Nomor Diizinkan": {
+      "main": [
+        [
+          {
+            "node": "Cek Tipe File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Cek Tipe File": {
+      "main": [
+        [
+          {
+            "node": "IF Ada File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Ada File": {
+      "main": [
+        [
+          {
+            "node": "Download File dari WAHA",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Deteksi Jenis Pertanyaan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deteksi Jenis Pertanyaan": {
+      "main": [
+        [
+          {
+            "node": "Ambil Metrik dari API Python",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ambil Metrik dari API Python": {
+      "main": [
+        [
+          {
+            "node": "Susun Jawaban Teks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Susun Jawaban Teks": {
+      "main": [
+        [
+          {
+            "node": "Balas Teks via WAHA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download File dari WAHA": {
+      "main": [
+        [
+          {
+            "node": "Upload ke Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload ke Database": {
+      "main": [
+        [
+          {
+            "node": "Format Konfirmasi Upload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Konfirmasi Upload": {
+      "main": [
+        [
+          {
+            "node": "Balas Konfirmasi via WAHA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

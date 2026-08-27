@@ -1,0 +1,153 @@
+{
+  "name": "Proyek1 - Laporan Otomatis Harian",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 21 * * *"
+            }
+          ]
+        }
+      },
+      "name": "Trigger Jam 21:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        300
+      ],
+      "notes": "Jalan tiap hari jam 21:00. Ubah cron sesuai kebutuhan warung."
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { tanggal: new Date().toISOString().split('T')[0] } }];"
+      },
+      "name": "Set Tanggal Hari Ini",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://host.docker.internal:3000/api/reports/daily"
+      },
+      "name": "Ambil Metrik dari API Next.js",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        680,
+        300
+      ],
+      "notes": "Memanggil api_server.py yang jalan di komputer kamu (bukan di dalam Docker). Pastikan api_server.py sedang running sebelum workflow ini dijalankan."
+    },
+    {
+      "parameters": {
+        "jsCode": "const hasil = $input.first().json;\n\nconst formatRupiah = (angka) => 'Rp' + angka.toLocaleString('id-ID');\nconst LINK_DASHBOARD = 'http://192.168.0.103:3001';\n\nlet topProdukText = hasil.top_produk\n  .map((p, i) => `${i + 1}. ${p.produk} — ${p.qty_terjual}x`)\n  .join('\\n');\n\nconst pesan = `📊 *Laporan Penjualan Hari Ini*\\n${hasil.tanggal}\\n\\n` +\n  `💰 Revenue: *${formatRupiah(hasil.total_revenue)}*\\n` +\n  `🧾 Orders: ${hasil.total_orders}\\n` +\n  `📈 AOV: ${formatRupiah(hasil.aov)}\\n\\n` +\n  `🏆 *Produk Terlaris:*\\n${topProdukText}\\n\\n` +\n  `➖➖➖➖➖\\n📱 Buka dashboard lengkap:\\n${LINK_DASHBOARD}`;\n\nreturn [{ json: { pesan } }];"
+      },
+      "name": "Format Pesan Laporan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/sendText",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Api-Key",
+              "value": "REDACTED_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "session",
+              "value": "REDACTED_SESSION_ID"
+            },
+            {
+              "name": "chatId",
+              "value": "REDACTED_PHONE_NUMBER"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.pesan }}"
+            }
+          ]
+        }
+      },
+      "name": "Kirim ke WhatsApp via WAHA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        300
+      ],
+      "notes": "URL pakai host.docker.internal karena n8n jalan di dalam container Docker, WAHA jalan sebagai container terpisah — localhost di dalam container n8n tidak akan sampai ke WAHA."
+    }
+  ],
+  "connections": {
+    "Trigger Jam 21:00": {
+      "main": [
+        [
+          {
+            "node": "Set Tanggal Hari Ini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Tanggal Hari Ini": {
+      "main": [
+        [
+          {
+            "node": "Ambil Metrik dari API Python",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ambil Metrik dari API Python": {
+      "main": [
+        [
+          {
+            "node": "Format Pesan Laporan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Pesan Laporan": {
+      "main": [
+        [
+          {
+            "node": "Kirim ke WhatsApp via WAHA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
