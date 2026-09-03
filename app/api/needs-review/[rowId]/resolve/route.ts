@@ -5,7 +5,7 @@
 // against a row that isn't NEEDS_REVIEW.
 
 import { NextRequest, NextResponse } from "next/server";
-import { resolveNeedsReview, LifecycleError } from "@/lib/talatee-core/lifecycle"; // adjust path
+import { resolveNeedsReview, LifecycleError } from "@/lib/talatee-core/lifecycle";
 import { getDb } from "@/app/api/_lib/db";
 import { getCurrentUser } from "@/app/api/_lib/session";
 
@@ -16,7 +16,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ row
   const db = getDb();
 
   try {
-    const result = resolveNeedsReview(
+    const result = await resolveNeedsReview(
       db,
       rowId,
       {

@@ -1,6 +1,6 @@
-import Database from "better-sqlite3";
 import { randomUUID } from "crypto";
 import { ExtractedTransaction } from "./types";
+import { Db } from "./db";
 
 /**
  * Business-fingerprint duplicate scoring (per SPEC.md §13):
@@ -27,19 +27,18 @@ export interface FingerprintMatch {
   matchedFields: string[];
 }
 
-export function findFingerprintMatches(
-  db: Database.Database,
+export async function findFingerprintMatches(
+  db: Db,
   business_id: string,
   txn: ExtractedTransaction,
   exclude_row_id?: string
-): FingerprintMatch[] {
-  const candidates = db
-    .prepare(
-      `SELECT row_id, transaction_date, transaction_time, total_amount, line_item_count
+): Promise<FingerprintMatch[]> {
+  const candidates = (await db.all(
+    `SELECT row_id, transaction_date, transaction_time, total_amount, line_item_count
        FROM transactions
-       WHERE business_id = ? AND status = 'ACTIVE' AND transaction_date = ? AND row_id != ?`
-    )
-    .all(business_id, txn.transaction_date, exclude_row_id ?? "") as {
+       WHERE business_id = $1 AND status = 'ACTIVE' AND transaction_date = $2 AND row_id != $3`,
+    [business_id, txn.transaction_date, exclude_row_id ?? ""]
+  )) as {
     row_id: string;
     transaction_date: string;
     transaction_time: string | null;
@@ -76,11 +75,10 @@ export function findFingerprintMatches(
     }
 
     // exact item match: compare product names + qty of this candidate's lines
-    const candidateLines = db
-      .prepare(
-        `SELECT product_or_service, quantity, unit_price FROM transaction_lines WHERE transaction_row_id = ?`
-      )
-      .all(c.row_id) as { product_or_service: string; quantity: number; unit_price: number }[];
+    const candidateLines = (await db.all(
+      `SELECT product_or_service, quantity, unit_price FROM transaction_lines WHERE transaction_row_id = $1`,
+      [c.row_id]
+    )) as { product_or_service: string; quantity: number; unit_price: number }[];
 
     if (linesMatchExactly(candidateLines, txn.lines)) {
       score += WEIGHTS.itemsExact;
@@ -95,24 +93,18 @@ export function findFingerprintMatches(
   return matches.filter((m) => m.score >= HIGH_CONFIDENCE_THRESHOLD);
 }
 
-export function createDuplicateFlag(
-  db: Database.Database,
+export async function createDuplicateFlag(
+  db: Db,
   business_id: string,
   transaction_row_id: string,
   candidate_row_id: string,
   match: FingerprintMatch
 ) {
-  db.prepare(
+  await db.run(
     `INSERT INTO duplicate_flags
        (flag_id, business_id, transaction_row_id, candidate_row_id, match_type, match_score, matched_fields, resolution_status)
-     VALUES (?, ?, ?, ?, 'POTENTIAL_DUPLICATE', ?, ?, 'PENDING')`
-  ).run(
-    randomUUID(),
-    business_id,
-    transaction_row_id,
-    candidate_row_id,
-    match.score,
-    JSON.stringify(match.matchedFields)
+     VALUES ($1, $2, $3, $4, 'POTENTIAL_DUPLICATE', $5, $6, 'PENDING')`,
+    [randomUUID(), business_id, transaction_row_id, candidate_row_id, match.score, JSON.stringify(match.matchedFields)]
   );
 }
 

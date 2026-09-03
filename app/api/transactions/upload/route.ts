@@ -13,7 +13,7 @@
 // yang sudah ada TIDAK DIUBAH SAMA SEKALI.
 
 import { NextRequest, NextResponse } from "next/server";
-import { ingestCsv, ingestExcel } from "@/lib/talatee-core/ingest"; // adjust path after copying into your project
+import { ingestCsv, ingestExcel } from "@/lib/talatee-core/ingest";
 import { syncToTalatee } from "@/lib/talatee-bridge/sync";
 import { getDb } from "../../_lib/db";
 import { getCurrentUser } from "../../_lib/session";
@@ -55,8 +55,8 @@ export async function POST(req: NextRequest) {
   try {
     const summary =
       extension === ".csv"
-        ? ingestCsv(db, user.business_id, file.name, fileBuffer.toString("utf-8"), user.user_identifier)
-        : ingestExcel(db, user.business_id, file.name, fileBuffer, user.user_identifier);
+        ? await ingestCsv(db, user.business_id, file.name, fileBuffer.toString("utf-8"), user.user_identifier)
+        : await ingestExcel(db, user.business_id, file.name, fileBuffer, user.user_identifier);
 
     // Sync ke Talatee (command center). Sengaja TIDAK di-await terhadap
     // response — kalau Talatee lambat/down, pemilik warung tetap dapat

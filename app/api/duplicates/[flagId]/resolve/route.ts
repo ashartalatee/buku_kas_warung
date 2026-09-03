@@ -9,7 +9,7 @@
 // deliberately does not decide that automatically.
 
 import { NextRequest, NextResponse } from "next/server";
-import { resolveDuplicateFlag, LifecycleError } from "@/lib/talatee-core/lifecycle"; // adjust path
+import { resolveDuplicateFlag, LifecycleError } from "@/lib/talatee-core/lifecycle";
 import { getDb } from "@/app/api/_lib/db";
 import { getCurrentUser } from "@/app/api/_lib/session";
 
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ fla
   }
 
   try {
-    const result = resolveDuplicateFlag(db, flagId, body.resolution, user.user_identifier);
+    const result = await resolveDuplicateFlag(db, flagId, body.resolution, user.user_identifier);
     return NextResponse.json(result);
   } catch (err) {
     if (err instanceof LifecycleError) {

@@ -1,4 +1,4 @@
-// lib/talatee-bridge/sync.ts
+// lib/talatee-bridge/sync.postgres.ts
 //
 // Jembatan SATU ARAH: setiap kali buku-kas-warung berhasil ingest data,
 // kirim salinan raw file ke Talatee (command center kamu) lewat endpoint
@@ -17,7 +17,7 @@
 // menyimpan raw copy sebagai source of truth-nya sendiri, terpisah dari
 // data yang sudah diproses lifecycle-nya di buku-kas-warung.
 
-import type Database from "better-sqlite3";
+import { Db } from "../talatee-core/db";
 
 const TALATEE_API_URL = process.env.TALATEE_API_URL ?? "http://localhost:8000";
 const TALATEE_API_KEY = process.env.TALATEE_API_KEY ?? "";
@@ -29,12 +29,7 @@ const TALATEE_SYNC_ENABLED = process.env.TALATEE_SYNC_ENABLED !== "false";
 type BusinessType = "warung" | "laundry" | "bengkel";
 
 interface SyncParams {
-  // Tipe Database ASLI dari better-sqlite3 (sama seperti yang dikembalikan
-  // getDb() di project ini) — sebelumnya sempat dipakai interface buatan
-  // sendiri yang lebih longgar, tapi itu tidak cocok secara struktural
-  // dengan tipe Statement.get() milik better-sqlite3 (TS2322). Pakai tipe
-  // asli supaya dijamin selalu cocok, apa pun versi better-sqlite3-nya.
-  db: Database.Database;
+  db: Db;
   businessId: string;
   filename: string;
   fileBytes: Buffer;
@@ -53,12 +48,7 @@ interface TalateeBatchResponse {
  * perlu try/catch tambahan karena fungsi ini sudah menangkap semua error
  * di dalam dirinya sendiri.
  */
-export async function syncToTalatee({
-  db,
-  businessId,
-  filename,
-  fileBytes,
-}: SyncParams): Promise<void> {
+export async function syncToTalatee({ db, businessId, filename, fileBytes }: SyncParams): Promise<void> {
   if (!TALATEE_SYNC_ENABLED) return;
 
   if (!TALATEE_API_KEY) {
@@ -70,18 +60,12 @@ export async function syncToTalatee({
   }
 
   try {
-    const business = db
-      .prepare(
-        `SELECT business_name, business_type FROM businesses WHERE business_id = ?`
-      )
-      .get(businessId) as
-      | { business_name: string; business_type: BusinessType }
-      | undefined;
+    const business = (await db.get(`SELECT business_name, business_type FROM businesses WHERE business_id = $1`, [
+      businessId,
+    ])) as { business_name: string; business_type: BusinessType } | undefined;
 
     if (!business) {
-      console.error(
-        `[talatee-sync] business_id ${businessId} tidak ditemukan di tabel businesses lokal, skip sync.`
-      );
+      console.error(`[talatee-sync] business_id ${businessId} tidak ditemukan di tabel businesses lokal, skip sync.`);
       return;
     }
 

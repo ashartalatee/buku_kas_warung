@@ -1,0 +1,9 @@
+tanggal,waktu,transaction_ref,produk,kategori,qty,harga_satuan,subtotal
+2026-08-20,14:32,INV-001,Kopi Susu,Minuman,2,8000,16000
+2026-08-20,14:32,INV-001,Roti Bakar,Makanan,1,10000,10000
+2026-08-20,09:10,,Es Teh,Minuman,1,5000,5000
+2026-08-20,10:05,,Air Mineral,Minuman,3,4000,12000
+2026-08-20,11:20,,Snack Ringan,Makanan,5,2000,11600
+2026-08-20,13:00,,Susu Kotak,Minuman,2,7000,14000
+2026-08-20,13:00,,Susu Kotak,Minuman,2,7000,14000
+2026-08-20,15:00,,"Nasi Goreng, Spesial",Makanan,1,18000,18000

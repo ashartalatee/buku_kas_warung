@@ -1,21 +1,13 @@
 // Copy to: app/api/transactions/[rowId]/correction/route.ts
 //
 // Corrects an ACTIVE transaction — creates a new version, old version
-// -> SUPERSEDED. Per SPEC.md §9, WA-originated corrections require an
-// explicit confirm step BEFORE this endpoint is called; this endpoint
-// itself always executes immediately once called (the confirmation UX
-// lives client-side / in the WhatsApp bot flow, not here).
-//
-// On a concurrent-correction conflict, returns 409 with the message
-// from lifecycle.ts. SPEC.md §13 calls for a richer message (who
-// changed it, to what value) — that enrichment isn't built into
-// lifecycle.ts yet; see core/README.md "Known simplification."
+// -> SUPERSEDED. Concurrent-correction conflicts return 409.
 
 import { NextRequest, NextResponse } from "next/server";
-import { createCorrection, LifecycleError } from "@/lib/talatee-core/lifecycle"; // adjust path
+import { createCorrection, LifecycleError } from "@/lib/talatee-core/lifecycle";
 import { getDb } from "@/app/api/_lib/db";
 import { getCurrentUser } from "@/app/api/_lib/session";
-import { CorrectionReason } from "@/lib/talatee-core/types"; // adjust path
+import { CorrectionReason } from "@/lib/talatee-core/types";
 
 const VALID_REASONS: CorrectionReason[] = [
   "Salah input",
@@ -48,7 +40,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ row
   }
 
   try {
-    const result = createCorrection(
+    const result = await createCorrection(
       db,
       rowId,
       { total_amount: body.total_amount },

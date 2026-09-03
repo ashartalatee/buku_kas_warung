@@ -1,23 +1,35 @@
--- Talatee Level 1 core schema — SQLite port of schema/schema.sql
--- Same model, same rules. Swap to Postgres later with minimal changes
--- (UUID default, TIMESTAMPTZ, NUMERIC types).
+-- Talatee Level 1 core schema — port PostgreSQL dari schema.sql (SQLite).
+-- Model dan aturan bisnisnya SAMA PERSIS dengan versi SQLite -- yang beda
+-- cuma tipe data & sintaks default value, supaya cocok dengan Postgres:
+--   TEXT (untuk id)      -> tetap TEXT, tapi default pakai gen_random_uuid()
+--   TEXT (untuk waktu)   -> TIMESTAMPTZ
+--   REAL                 -> DOUBLE PRECISION (BUKAN NUMERIC -- driver `pg`
+--                           mengembalikan NUMERIC sebagai string, yang akan
+--                           diam-diam merusak semua perhitungan arithmetic
+--                           di validation.ts/metrics.ts. DOUBLE PRECISION
+--                           berperilaku sama seperti REAL di SQLite: selalu
+--                           balik sebagai number JS)
+--   INTEGER (boolean 0/1)-> BOOLEAN
+--   datetime('now')      -> now()
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE IF NOT EXISTS businesses (
-    business_id     TEXT PRIMARY KEY,
+    business_id     TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     business_name   TEXT NOT NULL,
     business_type   TEXT NOT NULL CHECK (business_type IN ('warung', 'laundry', 'bengkel')),
-    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS sources (
-    source_id           TEXT PRIMARY KEY,
+    source_id           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     business_id         TEXT NOT NULL REFERENCES businesses(business_id),
     source_type         TEXT NOT NULL CHECK (source_type IN
                             ('csv_upload', 'excel_upload', 'receipt_ocr', 'whatsapp_manual')),
     original_filename   TEXT,
     file_hash            TEXT NOT NULL,
     uploaded_by           TEXT NOT NULL,
-    uploaded_at            TEXT NOT NULL DEFAULT (datetime('now')),
+    uploaded_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     status                  TEXT NOT NULL DEFAULT 'RECEIVED'
                               CHECK (status IN ('RECEIVED', 'PROCESSING', 'COMPLETED', 'FAILED')),
@@ -30,7 +42,7 @@ CREATE TABLE IF NOT EXISTS sources (
 );
 
 CREATE TABLE IF NOT EXISTS transactions (
-    row_id               TEXT PRIMARY KEY,
+    row_id               TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     transaction_id         TEXT NOT NULL,
     version                  INTEGER NOT NULL,
 
@@ -41,7 +53,7 @@ CREATE TABLE IF NOT EXISTS transactions (
 
     transaction_date                 TEXT NOT NULL,
     transaction_time                   TEXT,
-    total_amount                         REAL NOT NULL,
+    total_amount                         DOUBLE PRECISION NOT NULL,
     line_item_count                        INTEGER NOT NULL,
 
     status                                   TEXT NOT NULL
@@ -52,9 +64,9 @@ CREATE TABLE IF NOT EXISTS transactions (
     previous_row_id                            TEXT REFERENCES transactions(row_id),
     validation_notes                             TEXT,
 
-    created_at                                     TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at                                     TIMESTAMPTZ NOT NULL DEFAULT now(),
     created_by                                       TEXT NOT NULL,
-    resolved_at                                        TEXT,
+    resolved_at                                        TIMESTAMPTZ,
     resolved_by                                          TEXT
 );
 
@@ -68,16 +80,16 @@ CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
 CREATE INDEX IF NOT EXISTS idx_transactions_transaction_id ON transactions(transaction_id);
 
 CREATE TABLE IF NOT EXISTS transaction_lines (
-    line_id             TEXT PRIMARY KEY,
+    line_id             TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     transaction_row_id   TEXT NOT NULL REFERENCES transactions(row_id) ON DELETE CASCADE,
 
     product_or_service     TEXT NOT NULL,
     category                  TEXT,
-    quantity                    REAL NOT NULL,
-    unit_price                    REAL NOT NULL,
-    subtotal                        REAL NOT NULL,
+    quantity                    DOUBLE PRECISION NOT NULL,
+    unit_price                    DOUBLE PRECISION NOT NULL,
+    subtotal                        DOUBLE PRECISION NOT NULL,
 
-    weight_kg                         REAL,
+    weight_kg                         DOUBLE PRECISION,
     service_type                        TEXT,
     sparepart                             TEXT,
     technician                              TEXT
@@ -86,7 +98,7 @@ CREATE TABLE IF NOT EXISTS transaction_lines (
 CREATE INDEX IF NOT EXISTS idx_transaction_lines_row ON transaction_lines(transaction_row_id);
 
 CREATE TABLE IF NOT EXISTS transaction_events (
-    event_id            TEXT PRIMARY KEY,
+    event_id            TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     transaction_id         TEXT NOT NULL,
     from_row_id               TEXT REFERENCES transactions(row_id),
     to_row_id                   TEXT REFERENCES transactions(row_id),
@@ -99,32 +111,32 @@ CREATE TABLE IF NOT EXISTS transaction_events (
     reason_detail                      TEXT,
 
     performed_by                         TEXT NOT NULL,
-    performed_at                           TEXT NOT NULL DEFAULT (datetime('now')),
+    performed_at                           TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    confirmed_via_whatsapp                   INTEGER DEFAULT 0,
+    confirmed_via_whatsapp                   BOOLEAN DEFAULT false,
     whatsapp_confirmation_message_id           TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_transaction_events_txn ON transaction_events(transaction_id);
 
 CREATE TABLE IF NOT EXISTS duplicate_flags (
-    flag_id                TEXT PRIMARY KEY,
+    flag_id                TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     business_id              TEXT NOT NULL REFERENCES businesses(business_id),
 
     transaction_row_id         TEXT NOT NULL REFERENCES transactions(row_id),
     candidate_row_id             TEXT NOT NULL REFERENCES transactions(row_id),
 
     match_type                     TEXT NOT NULL CHECK (match_type IN ('EXACT_DUPLICATE', 'POTENTIAL_DUPLICATE')),
-    match_score                      REAL,
-    matched_fields                     TEXT, -- JSON array as text (SQLite has no native array type)
+    match_score                      DOUBLE PRECISION,
+    matched_fields                     TEXT, -- JSON array as text, sama seperti versi SQLite
 
     resolution_status                    TEXT NOT NULL DEFAULT 'PENDING'
                                           CHECK (resolution_status IN
                                             ('PENDING', 'CONFIRMED_DUPLICATE', 'CONFIRMED_NEW')),
     resolved_by                             TEXT,
-    resolved_at                               TEXT,
+    resolved_at                               TIMESTAMPTZ,
 
-    created_at                                  TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at                                  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_duplicate_flags_status ON duplicate_flags(resolution_status);

@@ -1,23 +1,24 @@
-// Copy this file to: app/api/_lib/db.ts (or lib/db.ts, adjust imports below)
+// Copy this file to: app/api/_lib/db.ts
 //
-// Next.js hot-reloads modules in dev, which would otherwise open a new
-// SQLite connection on every request. Caching it on `globalThis` avoids
-// that. Swap this whole file for a Postgres pool (e.g. `pg` or a Prisma
-// client) when moving off SQLite — nothing in the route handlers below
-// needs to change beyond this file, since they only import `getDb()`.
+// Ganti dari SQLite (better-sqlite3, 1 file lokal) ke PostgreSQL (pool
+// koneksi, server terpisah). Singleton pool-nya sama alasannya seperti
+// versi SQLite: Next.js dev-mode reload modul berkali-kali, jadi pool
+// disimpan di globalThis supaya tidak bikin koneksi baru tiap reload.
 
-import { openDatabase } from "@/lib/talatee-core/db"; // adjust path after copying into your project
-import path from "path";
+import { openDatabase, Db } from "@/lib/talatee-core/db";
 
-declare global {
-  // eslint-disable-next-line no-var
-  var __talateeDb: ReturnType<typeof openDatabase> | undefined;
-}
+const globalForDb = globalThis as unknown as { __talatee_pg?: Db };
 
-export function getDb() {
-  if (!global.__talateeDb) {
-    const dbPath = process.env.TALATEE_DB_PATH ?? path.join(process.cwd(), "talatee.sqlite");
-    global.__talateeDb = openDatabase(dbPath);
+export function getDb(): Db {
+  if (!globalForDb.__talatee_pg) {
+    const connectionString = process.env.DATABASE_URL;
+    if (!connectionString) {
+      throw new Error(
+        "DATABASE_URL belum diisi di .env.local. Contoh: " +
+          "postgresql://talatee:PASSWORD@localhost:5432/buku_kas_warung"
+      );
+    }
+    globalForDb.__talatee_pg = openDatabase(connectionString);
   }
-  return global.__talateeDb;
+  return globalForDb.__talatee_pg;
 }

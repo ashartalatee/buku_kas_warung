@@ -43,4 +43,8 @@ next-env.d.ts
 # DATA ASLI KLIEN - JANGAN PERNAH masuk git
 *.sqlite
 *.sqlite3
+/backups
 *.db
+
+# Catatan setup berisi kredensial asli - JANGAN commit
+Setup_waha_n8n.md
