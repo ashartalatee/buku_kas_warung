@@ -26,6 +26,7 @@ export function NeedsReviewList() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -63,24 +64,26 @@ export function NeedsReviewList() {
     load(); // refresh the queue
   }
 
-  if (loading) return <p className="text-sm text-neutral-400">Memuat...</p>;
+  if (loading) return <p className="text-sm text-dash-muted">Memuat...</p>;
   if (items.length === 0) return null; // nothing needs review — show nothing, not an empty state banner
 
+  const visible = expanded ? items : items.slice(0, 5);
+
   return (
-    <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
-      <p className="mb-3 text-sm font-medium text-amber-800">
+    <div className="dash-card dash-card--action font-dash" style={{ "--accent": "var(--color-dash-amber)" } as React.CSSProperties}>
+      <p className="border-b border-dash-border p-4 text-sm font-medium text-dash-amber">
         ⚠️ {items.length} transaksi perlu diperiksa
       </p>
 
-      <div className="flex flex-col gap-2">
-        {items.map((item) => (
-          <div key={item.row_id} className="rounded-lg border border-amber-200 bg-white p-3">
-            <div className="flex items-start justify-between">
+      <div>
+        {visible.map((item) => (
+          <div key={item.row_id} className="border-b border-dash-border p-3 last:border-0">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <p className="text-sm font-medium">
+                <p className="text-sm font-medium text-dash-text">
                   {item.transaction_date} {item.transaction_time ?? ""}
                 </p>
-                <p className="mt-1 text-xs text-amber-700">{item.validation_notes}</p>
+                <p className="mt-1 text-xs text-dash-amber">{item.validation_notes}</p>
               </div>
               {editingId !== item.row_id && (
                 <button
@@ -88,7 +91,7 @@ export function NeedsReviewList() {
                     setEditingId(item.row_id);
                     setEditValue(String(item.total_amount));
                   }}
-                  className="rounded-lg border border-neutral-300 px-3 py-1 text-xs font-medium"
+                  className="self-start rounded border border-dash-border px-2.5 py-1 text-xs font-medium text-dash-text hover:bg-dash-surface-2 sm:shrink-0"
                 >
                   Perbaiki
                 </button>
@@ -96,24 +99,24 @@ export function NeedsReviewList() {
             </div>
 
             {editingId === item.row_id && (
-              <div className="mt-3 flex items-center gap-2 border-t border-amber-100 pt-3">
-                <span className="text-xs text-neutral-500">Total benar (Rp)</span>
+              <div className="mt-3 flex items-center gap-2 border-t border-dash-border pt-3">
+                <span className="text-xs text-dash-muted">Total benar (Rp)</span>
                 <input
                   type="number"
                   value={editValue}
                   onChange={(e) => setEditValue(e.target.value)}
-                  className="w-32 rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                  className="w-32 rounded border border-dash-border bg-dash-surface px-2 py-1 text-sm text-dash-text outline-none focus:border-dash-amber"
                   autoFocus
                 />
                 <button
                   onClick={() => submitFix(item.row_id)}
-                  className="rounded-md bg-neutral-900 px-3 py-1 text-xs font-medium text-white"
+                  className="rounded bg-dash-amber px-3 py-1 text-xs font-medium text-black hover:brightness-110"
                 >
                   Simpan
                 </button>
                 <button
                   onClick={() => setEditingId(null)}
-                  className="rounded-md px-3 py-1 text-xs text-neutral-500"
+                  className="rounded px-3 py-1 text-xs text-dash-muted"
                 >
                   Batal
                 </button>
@@ -123,7 +126,16 @@ export function NeedsReviewList() {
         ))}
       </div>
 
-      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      {items.length > 5 && (
+        <button
+          onClick={() => setExpanded((e) => !e)}
+          className="w-full border-t border-dash-border p-2 text-xs font-medium text-dash-amber hover:bg-dash-surface-2"
+        >
+          {expanded ? "Tampilkan lebih sedikit" : `Tampilkan semua (${items.length})`}
+        </button>
+      )}
+
+      {error && <p className="border-t border-dash-border p-3 text-sm text-dash-red">{error}</p>}
     </div>
   );
 }

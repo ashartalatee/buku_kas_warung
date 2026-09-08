@@ -40,9 +40,9 @@ interface VersionEntry {
 }
 
 const STATUS_STYLE: Record<Txn["status"], string> = {
-  ACTIVE: "text-neutral-900",
-  NEEDS_REVIEW: "text-amber-700",
-  VOID: "text-neutral-400 line-through",
+  ACTIVE: "text-dash-text",
+  NEEDS_REVIEW: "text-dash-amber",
+  VOID: "text-dash-muted line-through",
 };
 
 export function TransactionsList({ date }: { date?: string }) {
@@ -54,6 +54,8 @@ export function TransactionsList({ date }: { date?: string }) {
   const [historyFor, setHistoryFor] = useState<string | null>(null);
   const [history, setHistory] = useState<VersionEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null); // baris yang sedang minta konfirmasi hapus
+  const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -105,13 +107,32 @@ export function TransactionsList({ date }: { date?: string }) {
     setHistoryFor(transaction_id);
   }
 
-  if (loading) return <p className="text-sm text-neutral-400">Memuat...</p>;
+  // Hapus ke Sampah -- REVERSIBEL, bukan permanen (lihat lifecycle.ts
+  // softDeleteTransaction). Baris langsung hilang dari daftar ini setelah
+  // berhasil (backend sudah filter deleted_at IS NULL), bisa dipulihkan
+  // lewat halaman Sampah kapan saja. Hapus PERMANEN sengaja tidak ada di
+  // sini -- cuma bisa dari halaman Sampah, supaya selalu 2 langkah sadar.
+  async function submitDelete(row_id: string) {
+    setError(null);
+    setDeleteBusyId(row_id);
+    const res = await fetch(`/api/transactions/${row_id}/delete`, { method: "POST" });
+    setDeleteBusyId(null);
+    if (!res.ok) {
+      const data = await res.json();
+      setError(data.error ?? "Gagal menghapus transaksi.");
+      return;
+    }
+    setDeletingId(null);
+    load();
+  }
+
+  if (loading) return <p className="text-sm text-dash-muted">Memuat...</p>;
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white">
+    <div className="dash-card">
       {rows.map((row) => (
-        <div key={row.row_id} className="border-b border-neutral-100 p-4 last:border-0">
-          <div className="flex items-start justify-between">
+        <div key={row.row_id} className="border-b border-dash-border p-4 last:border-0">
+          <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
               <p className={`text-sm font-medium ${STATUS_STYLE[row.status]}`}>
                 {row.transaction_date} {row.transaction_time ?? ""} — Rp
@@ -121,18 +142,18 @@ export function TransactionsList({ date }: { date?: string }) {
               {row.was_corrected && (
                 <button
                   onClick={() => loadHistory(row.transaction_id, row.row_id)}
-                  className="mt-1 inline-block rounded bg-sky-50 px-2 py-0.5 text-xs text-sky-700"
+                  className="mt-1 inline-block rounded bg-dash-surface-2 px-2 py-0.5 text-xs text-dash-accent"
                 >
                   Dikoreksi · Lihat riwayat
                 </button>
               )}
               {row.status === "VOID" && (
-                <span className="mt-1 inline-block rounded bg-neutral-100 px-2 py-0.5 text-xs text-neutral-500">
+                <span className="mt-1 inline-block rounded bg-dash-surface-2 px-2 py-0.5 text-xs text-dash-muted">
                   Dibatalkan
                 </span>
               )}
               {row.status === "NEEDS_REVIEW" && (
-                <span className="mt-1 inline-block rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
+                <span className="mt-1 inline-block rounded bg-dash-surface-2 px-2 py-0.5 text-xs text-dash-amber">
                   Perlu review — lihat bagian Needs Review
                 </span>
               )}
@@ -144,17 +165,44 @@ export function TransactionsList({ date }: { date?: string }) {
                   setCorrectingId(row.row_id);
                   setCorrectValue(String(row.total_amount));
                 }}
-                className="rounded-lg border border-neutral-300 px-3 py-1 text-xs font-medium"
+                className="rounded border border-dash-border px-3 py-1 text-xs font-medium text-dash-text hover:bg-dash-surface-2"
               >
                 Koreksi
               </button>
             )}
+            {deletingId !== row.row_id && (
+              <button
+                onClick={() => setDeletingId(row.row_id)}
+                className="rounded border border-dash-border px-3 py-1 text-xs font-medium text-dash-red hover:bg-dash-surface-2"
+                title="Hapus ke Sampah (masih bisa dipulihkan)"
+              >
+                🗑️ Hapus
+              </button>
+            )}
           </div>
 
+          {deletingId === row.row_id && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-dash-border pt-3">
+              <span className="text-xs text-dash-text">
+                Hapus transaksi ini ke Sampah? Masih bisa dipulihkan nanti.
+              </span>
+              <button
+                onClick={() => submitDelete(row.row_id)}
+                disabled={deleteBusyId === row.row_id}
+                className="rounded bg-dash-red px-3 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+              >
+                {deleteBusyId === row.row_id ? "Menghapus..." : "Ya, hapus"}
+              </button>
+              <button onClick={() => setDeletingId(null)} className="rounded px-3 py-1 text-xs text-dash-muted">
+                Batal
+              </button>
+            </div>
+          )}
+
           {historyFor === row.transaction_id && (
-            <div className="mt-2 rounded-lg bg-neutral-50 p-3 text-xs">
+            <div className="mt-2 rounded bg-dash-surface-2 p-3 text-xs">
               {history.map((v) => (
-                <p key={v.version} className={v.status === "SUPERSEDED" ? "text-neutral-400" : "text-neutral-800"}>
+                <p key={v.version} className={v.status === "SUPERSEDED" ? "text-dash-muted" : "text-dash-text"}>
                   v{v.version} · Rp{v.total_amount.toLocaleString("id-ID")} · {v.status} · {v.created_at}
                 </p>
               ))}
@@ -162,21 +210,21 @@ export function TransactionsList({ date }: { date?: string }) {
           )}
 
           {correctingId === row.row_id && (
-            <div className="mt-3 flex flex-col gap-2 border-t border-neutral-100 pt-3">
+            <div className="mt-3 flex flex-col gap-2 border-t border-dash-border pt-3">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-neutral-500">Total benar (Rp)</span>
+                <span className="text-xs text-dash-muted">Total benar (Rp)</span>
                 <input
                   type="number"
                   value={correctValue}
                   onChange={(e) => setCorrectValue(e.target.value)}
-                  className="w-32 rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                  className="w-32 rounded border border-dash-border bg-dash-surface px-2 py-1 text-sm text-dash-text outline-none focus:border-dash-accent"
                   autoFocus
                 />
               </div>
               <select
                 value={correctReason}
                 onChange={(e) => setCorrectReason(e.target.value as (typeof REASONS)[number])}
-                className="w-fit rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                className="w-fit rounded border border-dash-border bg-dash-surface px-2 py-1 text-sm text-dash-text"
               >
                 {REASONS.map((r) => (
                   <option key={r} value={r}>
@@ -187,13 +235,13 @@ export function TransactionsList({ date }: { date?: string }) {
               <div className="flex gap-2">
                 <button
                   onClick={() => submitCorrection(row.row_id)}
-                  className="rounded-md bg-neutral-900 px-3 py-1 text-xs font-medium text-white"
+                  className="rounded bg-dash-accent px-3 py-1 text-xs font-medium text-white hover:opacity-90"
                 >
                   Simpan koreksi
                 </button>
                 <button
                   onClick={() => setCorrectingId(null)}
-                  className="rounded-md px-3 py-1 text-xs text-neutral-500"
+                  className="rounded px-3 py-1 text-xs text-dash-muted"
                 >
                   Batal
                 </button>
@@ -203,7 +251,7 @@ export function TransactionsList({ date }: { date?: string }) {
         </div>
       ))}
 
-      {error && <p className="border-t border-neutral-100 p-3 text-sm text-red-600">{error}</p>}
+      {error && <p className="border-t border-dash-border p-3 text-sm text-dash-red">{error}</p>}
     </div>
   );
 }
