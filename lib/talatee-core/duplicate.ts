@@ -34,9 +34,14 @@ export async function findFingerprintMatches(
   exclude_row_id?: string
 ): Promise<FingerprintMatch[]> {
   const candidates = (await db.all(
+    // deleted_at IS NULL (7 Sept 2026, fitur Sampah): transaksi yang
+    // sudah dibuang tidak boleh dijadikan "kandidat duplikat" untuk data
+    // baru yang masuk -- kalau tidak, upload file baru bisa keblokir
+    // gara-gara "mirip" transaksi yang sebenarnya sudah tidak ada di
+    // tampilan mana pun.
     `SELECT row_id, transaction_date, transaction_time, total_amount, line_item_count
        FROM transactions
-       WHERE business_id = $1 AND status = 'ACTIVE' AND transaction_date = $2 AND row_id != $3`,
+       WHERE business_id = $1 AND status = 'ACTIVE' AND deleted_at IS NULL AND transaction_date = $2 AND row_id != $3`,
     [business_id, txn.transaction_date, exclude_row_id ?? ""]
   )) as {
     row_id: string;

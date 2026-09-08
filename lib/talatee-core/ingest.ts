@@ -222,10 +222,15 @@ async function createSourceRow(
   file_hash: string,
   uploaded_by: string
 ): Promise<string> {
-  const existing = await db.get(`SELECT source_id FROM sources WHERE business_id = $1 AND file_hash = $2`, [
-    business_id,
-    file_hash,
-  ]);
+  // deleted_at IS NULL (7 Sept 2026, fitur Sampah): kalau upload lama
+  // dengan hash yang sama sudah dibuang ke Sampah, file yang sama BOLEH
+  // diupload ulang -- lihat uq_sources_business_file_hash_active (partial
+  // unique index) di schema.sql untuk alasan constraint-nya juga diganti,
+  // bukan cuma cek ini saja.
+  const existing = await db.get(
+    `SELECT source_id FROM sources WHERE business_id = $1 AND file_hash = $2 AND deleted_at IS NULL`,
+    [business_id, file_hash]
+  );
   if (existing) {
     throw new Error("File ini sudah pernah diupload sebelumnya (exact duplicate file).");
   }

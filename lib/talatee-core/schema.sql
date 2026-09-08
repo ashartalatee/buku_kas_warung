@@ -38,8 +38,24 @@ CREATE TABLE IF NOT EXISTS sources (
     processed_row_count       INTEGER DEFAULT 0,
     whatsapp_message_id       TEXT,
 
-    UNIQUE (business_id, file_hash)
+    -- Sampah (7 Sept 2026): "batal upload 1 batch sekaligus", dipakai bareng
+    -- deleted_at di transactions di bawah -- lihat lifecycle.ts
+    -- softDeleteSource()/hardDeleteSource(). deleted_by dicatat sama seperti
+    -- performed_by di transaction_events, meski di Phase 1 (single-owner)
+    -- isinya selalu sama.
+    deleted_at              TIMESTAMPTZ,
+    deleted_by                TEXT
 );
+
+-- UNIQUE (business_id, file_hash) SENGAJA jadi partial index (bukan
+-- constraint UNIQUE biasa) supaya file yang sama BISA diupload ulang
+-- setelah batch lamanya dibuang ke Sampah -- constraint biasa akan
+-- menolak INSERT baru walau baris lamanya sudah "dihapus" (soft-delete
+-- tetap menyisakan barisnya secara fisik, jadi UNIQUE biasa masih akan
+-- bentrok). Kalau baris lama masih deleted_at IS NULL, tetap ditolak
+-- seperti biasa (mencegah upload file yang sama 2x tanpa sengaja).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_sources_business_file_hash_active
+    ON sources(business_id, file_hash) WHERE deleted_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS transactions (
     row_id               TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -67,7 +83,18 @@ CREATE TABLE IF NOT EXISTS transactions (
     created_at                                     TIMESTAMPTZ NOT NULL DEFAULT now(),
     created_by                                       TEXT NOT NULL,
     resolved_at                                        TIMESTAMPTZ,
-    resolved_by                                          TEXT
+    resolved_by                                          TEXT,
+
+    -- Sampah (7 Sept 2026): soft-delete, ORTOGONAL terhadap `status` di
+    -- atas -- sengaja BUKAN status baru (mis. 'DELETED'), supaya makna
+    -- ACTIVE/VOID/SUPERSEDED yang sudah ada (dan sudah dipakai di banyak
+    -- tempat: uq_one_active_per_transaction, laporan, dst) tidak perlu
+    -- diubah sama sekali. "Dihapus" di sini murni soal "tampil atau tidak
+    -- di semua query", terlepas dari status bisnisnya apa. Baris dengan
+    -- deleted_at terisi TIDAK BOLEH muncul di query mana pun kecuali
+    -- yang eksplisit untuk halaman Sampah (lihat metrics.ts listTrash*).
+    deleted_at                                              TIMESTAMPTZ,
+    deleted_by                                                TEXT
 );
 
 -- CORE INTEGRITY RULE: at most one ACTIVE row per transaction_id.
@@ -78,6 +105,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_one_active_per_transaction
 CREATE INDEX IF NOT EXISTS idx_transactions_business_date ON transactions(business_id, transaction_date);
 CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
 CREATE INDEX IF NOT EXISTS idx_transactions_transaction_id ON transactions(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_deleted_at ON transactions(deleted_at) WHERE deleted_at IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS transaction_lines (
     line_id             TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -140,3 +168,62 @@ CREATE TABLE IF NOT EXISTS duplicate_flags (
 );
 
 CREATE INDEX IF NOT EXISTS idx_duplicate_flags_status ON duplicate_flags(resolution_status);
+
+-- === Kelola Produk & Stok ==================================================
+-- Ditambahkan 5 Sept 2026. Sengaja mengikuti prinsip yang sama dengan
+-- transactions/transaction_events: stok TIDAK PERNAH diubah langsung dengan
+-- UPDATE polos dari luar -- satu-satunya jalur adalah adjustStock() di
+-- products.ts, yang menulis products.stock_qty DAN 1 baris di
+-- stock_adjustments dalam 1 DB transaction (BEGIN/COMMIT), supaya angka stok
+-- selalu punya riwayat yang bisa ditelusuri (traceable), bukan cuma angka
+-- yang berubah diam-diam.
+--
+-- Produk TIDAK PERNAH di-hard-delete -- "hapus" = is_active jadi false
+-- (soft delete/arsip), konsisten dengan prinsip void transaksi (data tidak
+-- pernah hilang, cuma disembunyikan dari tampilan aktif).
+
+CREATE TABLE IF NOT EXISTS products (
+    product_id            TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    business_id           TEXT NOT NULL REFERENCES businesses(business_id),
+
+    name                  TEXT NOT NULL,
+    category              TEXT,
+    unit                  TEXT NOT NULL DEFAULT 'pcs',
+    price                 DOUBLE PRECISION,
+
+    stock_qty             DOUBLE PRECISION NOT NULL DEFAULT 0,
+    low_stock_threshold   DOUBLE PRECISION,
+
+    is_active             BOOLEAN NOT NULL DEFAULT true,
+
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by            TEXT NOT NULL,
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Mencegah 2 produk aktif dengan nama sama persis (case-insensitive) di 1
+-- bisnis yang sama -- tapi TIDAK berlaku untuk produk yang sudah diarsipkan,
+-- supaya nama lama tetap bisa dipakai ulang untuk produk baru kalau perlu.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_active_product_name_per_business
+    ON products(business_id, lower(name))
+    WHERE is_active = true;
+
+CREATE INDEX IF NOT EXISTS idx_products_business ON products(business_id);
+
+CREATE TABLE IF NOT EXISTS stock_adjustments (
+    adjustment_id     TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    product_id        TEXT NOT NULL REFERENCES products(product_id),
+    business_id       TEXT NOT NULL REFERENCES businesses(business_id),
+
+    delta             DOUBLE PRECISION NOT NULL, -- positif = stok masuk, negatif = stok keluar
+    stock_after       DOUBLE PRECISION NOT NULL, -- snapshot supaya riwayat gampang dibaca tanpa replay
+
+    reason            TEXT NOT NULL CHECK (reason IN
+                        ('Stok masuk', 'Terjual manual', 'Rusak/hilang', 'Koreksi hitung ulang', 'Lainnya')),
+    reason_detail     TEXT,
+
+    performed_by      TEXT NOT NULL,
+    performed_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_stock_adjustments_product ON stock_adjustments(product_id, performed_at DESC);

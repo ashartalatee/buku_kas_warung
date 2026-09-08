@@ -1,21 +1,101 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Sistem desain "Buku Kas" -- lihat UI_REDESIGN_NOTES.md untuk alasan tiap
+   pilihan. Semua token didefinisikan langsung di dalam @theme (bukan lewat
+   :root + @theme inline) supaya Tailwind v4 langsung menghasilkan utility
+   class-nya (bg-navy, text-ink, dst) tanpa lapisan tidak langsung yang
+   gampang salah tulis jadi merujuk ke dirinya sendiri. */
+@theme {
+  --color-background: #f6f2e6;
+  --color-foreground: #211d16;
+
+  --color-navy: #142850;
+  --color-navy-light: #1c3a6b;
+  --color-paper: #fffdf6;
+  --color-cream: #f6f2e6;
+  --color-ink: #211d16;
+  --color-muted: #857d68;
+  --color-rule: #e3dcc8;
+  --color-ledger-green: #1f6d47;
+  --color-ledger-red: #a13d3d;
+  --color-ledger-amber: #a8721f;
+
+  /* Token dashboard admin (redesign 7 Sept 2026, mengikuti mockup sidebar
+     navy + konten TERANG "Talatee"). Sebelumnya tema ini gelap (mockup
+     6 Sept) -- sekarang diganti terang, TAPI nama token & utility class-nya
+     (dash-card, text-dash-text, bg-dash-green/15, dst) sengaja DIPERTAHANKAN
+     sama persis. Efeknya: NeedsReviewList/DuplicateFlagList/DataInboxList/
+     dst yang sudah pakai class-class itu otomatis ikut jadi terang tanpa
+     perlu diubah satu per satu -- cuma NILAI variabelnya yang berubah.
+     Sidebar tetap gelap by design (kontras dengan konten), makanya punya
+     token sendiri (--color-dash-sidebar-*), TIDAK ikut token di atas. */
+  --color-dash-bg: #f3f4f8;
+  --color-dash-surface: #ffffff;
+  --color-dash-surface-2: #eef0f6;
+  --color-dash-border: #e3e6ef;
+  --color-dash-text: #1b2130;
+  --color-dash-muted: #6b7280;
+  --color-dash-green: #16a34a;
+  --color-dash-red: #dc2626;
+  --color-dash-amber: #b45309;
+  --color-dash-blue: #2563eb;
+  --color-dash-purple: #9333ea;
+
+  /* Aksen merek (dipakai untuk item aktif di sidebar, tombol utama seperti
+     "Upload CSV/Excel", dan logo) -- indigo/biru, beda dari --color-dash-blue
+     (info) supaya "ini brand" vs "ini status info" tetap bisa dibedakan
+     kalau nanti dipakai berdampingan. */
+  --color-dash-accent: #3452eb;
+  --color-dash-accent-soft: #eef1ff;
+
+  /* Token KHUSUS sidebar -- sengaja tetap gelap walau konten sudah terang,
+     supaya sidebar tetap jadi elemen navigasi yang menonjol (sesuai mockup). */
+  --color-dash-sidebar-bg: #0b1120;
+  --color-dash-sidebar-border: #1e2536;
+  --color-dash-sidebar-hover: #171e30;
+  --color-dash-sidebar-text: #e7e9f3;
+  --color-dash-sidebar-muted: #8991a8;
+  --color-dash-sidebar-section: #5b6377;
+  --color-dash-sidebar-active-bg: #3452eb;
+
+  --font-sans: var(--font-plex-mono);
+  --font-mono: var(--font-plex-mono);
+  --font-dash: var(--font-inter);
 }
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-plex-mono), "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-feature-settings: "tnum" 1; /* angka tabular -- kolom rupiah rata rapi seperti buku kas asli */
 }
+
+/* Kartu dasar: permukaan "kertas" datar, tanpa shadow/gradient. Radius kecil
+   (4px) -- bukan pil membulat seperti kit SaaS generik. */
+.ledger-card {
+  background: var(--color-paper);
+  border: 1px solid var(--color-rule);
+  border-radius: 4px;
+}
+
+/* Varian untuk seksi yang BUTUH TINDAKAN (needs review, duplikat, upload) --
+   garis tebal di sisi kiri sebagai penanda struktural ("ini perlu kamu
+   lakukan sesuatu"), bukan background berwarna penuh yang riuh. */
+.ledger-card--action {
+  border-left: 3px solid var(--accent, var(--color-navy));
+}
+
+/* Varian gelap dari .ledger-card/.ledger-card--action, khusus dashboard
+   admin baru -- radius sedikit lebih besar (8px) mengikuti gaya kartu
+   SaaS pada mockup, beda dari .ledger-card yang sengaja nyaris tanpa
+   radius (gaya kertas/ledger). */
+.dash-card {
+  background: var(--color-dash-surface);
+  border: 1px solid var(--color-dash-border);
+  border-radius: 8px;
+}
+.dash-card--action {
+  border-left: 3px solid var(--accent, var(--color-dash-amber));
+}
+
+

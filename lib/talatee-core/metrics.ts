@@ -1,4 +1,6 @@
 import { Db } from "./db";
+import { getTodayLocalDate } from "./date-utils";
+import { getLowStockProducts } from "./products";
 
 // CATATAN PORTING (baca ini sebelum ubah query di file ini):
 //
@@ -16,7 +18,7 @@ export async function getDailyMetrics(db: Db, business_id: string, date: string)
   const row = (await db.get(
     `SELECT COUNT(*)::int as orders, COALESCE(SUM(total_amount), 0) as revenue
        FROM transactions
-       WHERE business_id = $1 AND status = 'ACTIVE' AND transaction_date = $2`,
+       WHERE business_id = $1 AND status = 'ACTIVE' AND deleted_at IS NULL AND transaction_date = $2`,
     [business_id, date]
   )) as { orders: number; revenue: number };
 
@@ -24,11 +26,73 @@ export async function getDailyMetrics(db: Db, business_id: string, date: string)
   return { date, orders: row.orders, revenue: round2(row.revenue), aov };
 }
 
+/** Ringkasan untuk dashboard admin baru (6 Sept 2026): revenue/orders/items
+ * terjual hari ini DAN kemarin (buat badge "vs kemarin"), plus produk aktif
+ * dari total & jumlah stok menipis. Item terjual dihitung terpisah dari
+ * transaction_lines (bukan di-JOIN bareng agregat transactions) supaya
+ * tidak fan-out -- JOIN 1 transaksi bergaris banyak akan menggandakan
+ * COUNT/SUM kalau digabung dalam 1 query yang sama. */
+export async function getDashboardSummary(db: Db, business_id: string) {
+  const today = getTodayLocalDate();
+  const yesterday = shiftDate(today, -1);
+
+  async function dayStats(date: string) {
+    const txn = (await db.get(
+      `SELECT COUNT(*)::int as orders, COALESCE(SUM(total_amount), 0) as revenue
+         FROM transactions
+        WHERE business_id = $1 AND status = 'ACTIVE' AND deleted_at IS NULL AND transaction_date = $2`,
+      [business_id, date]
+    )) as { orders: number; revenue: number };
+
+    const items = (await db.get(
+      `SELECT COALESCE(SUM(tl.quantity), 0) as qty
+         FROM transaction_lines tl
+         JOIN transactions t ON t.row_id = tl.transaction_row_id
+        WHERE t.business_id = $1 AND t.status = 'ACTIVE' AND t.deleted_at IS NULL AND t.transaction_date = $2`,
+      [business_id, date]
+    )) as { qty: number };
+
+    return { orders: txn.orders, revenue: round2(txn.revenue), items_sold: round2(items.qty) };
+  }
+
+  const [todayStats, yesterdayStats] = await Promise.all([dayStats(today), dayStats(yesterday)]);
+
+  // null = "tidak masuk akal dihitung persen" (kemarin 0, jadi bukan
+  // "naik sekian %" -- itu klaim palsu kalau dipaksakan jadi angka).
+  function pctChange(curr: number, prev: number): number | null {
+    if (prev === 0) return curr === 0 ? 0 : null;
+    return round2(((curr - prev) / prev) * 100);
+  }
+
+  const productCounts = (await db.get(
+    `SELECT COUNT(*)::int as total, COUNT(*) FILTER (WHERE is_active)::int as active
+       FROM products WHERE business_id = $1`,
+    [business_id]
+  )) as { total: number; active: number };
+
+  const lowStock = await getLowStockProducts(db, business_id);
+
+  return {
+    date: today,
+    today: {
+      ...todayStats,
+      aov: todayStats.orders > 0 ? round2(todayStats.revenue / todayStats.orders) : 0,
+    },
+    vs_yesterday: {
+      revenue_pct: pctChange(todayStats.revenue, yesterdayStats.revenue),
+      orders_pct: pctChange(todayStats.orders, yesterdayStats.orders),
+      items_sold_pct: pctChange(todayStats.items_sold, yesterdayStats.items_sold),
+    },
+    products: { active: productCounts.active, total: productCounts.total },
+    low_stock_count: lowStock.length,
+  };
+}
+
 export async function getNeedsReviewQueue(db: Db, business_id: string) {
   return db.all(
     `SELECT row_id, transaction_date, transaction_time, total_amount, validation_notes, created_at
        FROM transactions
-       WHERE business_id = $1 AND status = 'NEEDS_REVIEW'
+       WHERE business_id = $1 AND status = 'NEEDS_REVIEW' AND deleted_at IS NULL
        ORDER BY created_at ASC`,
     [business_id]
   );
@@ -36,9 +100,24 @@ export async function getNeedsReviewQueue(db: Db, business_id: string) {
 
 export async function getPendingDuplicateFlags(db: Db, business_id: string) {
   return db.all(
-    `SELECT flag_id, transaction_row_id, candidate_row_id, match_score, matched_fields
-       FROM duplicate_flags
-       WHERE business_id = $1 AND resolution_status = 'PENDING'`,
+    // created_at ditambahkan (7 Sept 2026) supaya feed aktivitas admin
+    // (RecentActivityFeed) bisa mengurutkan flag duplikat bareng dengan
+    // kejadian lain (upload, needs-review) berdasarkan waktu asli, bukan
+    // dikira-kira. Kolomnya sudah ada dari awal di schema.sql, cuma belum
+    // pernah di-SELECT di sini.
+    //
+    // NOT EXISTS ... deleted_at IS NOT NULL (7 Sept 2026, fitur Sampah):
+    // kalau salah satu sisi transaksi yang dibandingkan sudah dibuang ke
+    // Sampah, flag-nya ikut disembunyikan -- tidak masuk akal menyuruh
+    // user "selesaikan duplikat" untuk transaksi yang sudah tidak ada di
+    // tampilan mana pun.
+    `SELECT df.flag_id, df.transaction_row_id, df.candidate_row_id, df.match_score, df.matched_fields, df.created_at
+       FROM duplicate_flags df
+       WHERE df.business_id = $1 AND df.resolution_status = 'PENDING'
+         AND NOT EXISTS (
+           SELECT 1 FROM transactions t
+            WHERE t.row_id IN (df.transaction_row_id, df.candidate_row_id) AND t.deleted_at IS NOT NULL
+         )`,
     [business_id]
   );
 }
@@ -58,7 +137,7 @@ export async function getVersionHistory(db: Db, transaction_id: string) {
   return db.all(
     `SELECT version, status, total_amount, created_at, resolved_at
        FROM transactions
-       WHERE transaction_id = $1
+       WHERE transaction_id = $1 AND deleted_at IS NULL
        ORDER BY version ASC`,
     [transaction_id]
   );
@@ -68,7 +147,10 @@ export async function getVersionHistory(db: Db, transaction_id: string) {
  * transaction_id, showing whichever version is "now true" (ACTIVE) or,
  * if voided, the VOID row itself. SUPERSEDED rows are intentionally
  * excluded here (they only surface via version history / lineage),
- * so the list always matches what the metrics actually count. */
+ * so the list always matches what the metrics actually count.
+ * deleted_at IS NULL (7 Sept 2026, fitur Sampah): baris yang sudah dibuang
+ * ke Sampah tidak boleh muncul di sini -- lihat halaman /trash untuk
+ * lihat/pulihkan baris yang dibuang. */
 export async function listTransactions(db: Db, business_id: string, date?: string) {
   const dateFilter = date ? `AND transaction_date = $2` : "";
   const params = date ? [business_id, date] : [business_id];
@@ -76,7 +158,7 @@ export async function listTransactions(db: Db, business_id: string, date?: strin
     `SELECT row_id, transaction_id, version, transaction_date, transaction_time,
               total_amount, line_item_count, status, created_at, resolved_at
        FROM transactions
-       WHERE business_id = $1 AND status IN ('ACTIVE', 'NEEDS_REVIEW', 'VOID') ${dateFilter}
+       WHERE business_id = $1 AND status IN ('ACTIVE', 'NEEDS_REVIEW', 'VOID') AND deleted_at IS NULL ${dateFilter}
        ORDER BY transaction_date DESC, transaction_time DESC`,
     params
   );
@@ -94,16 +176,47 @@ export async function hasCorrectionHistory(db: Db, transaction_id: string): Prom
 
 /** Data Inbox: recent file uploads with their processing status — the
  * answer to "did my file get in?" per SPEC.md §8. Failed uploads never
- * disappear; they stay here with a reason, ready for re-upload. */
+ * disappear; they stay here with a reason, ready for re-upload.
+ * deleted_at IS NULL (7 Sept 2026): batch yang dibuang ke Sampah hilang
+ * dari sini, munculnya di halaman /trash. */
 export async function getDataInbox(db: Db, business_id: string, limit = 20) {
   return db.all(
     `SELECT source_id, original_filename, status, failure_reason,
               row_count, processed_row_count, uploaded_at
        FROM sources
-       WHERE business_id = $1
+       WHERE business_id = $1 AND deleted_at IS NULL
        ORDER BY uploaded_at DESC
        LIMIT $2`,
     [business_id, limit]
+  );
+}
+
+/** Sampah -- daftar transaksi yang sudah dibuang (deleted_at terisi),
+ * terbaru dulu. Dipakai halaman /trash, TIDAK dipakai di tempat lain. */
+export async function listTrashTransactions(db: Db, business_id: string) {
+  return db.all(
+    `SELECT row_id, transaction_id, transaction_date, transaction_time,
+              total_amount, status, deleted_at, deleted_by
+       FROM transactions
+       WHERE business_id = $1 AND deleted_at IS NOT NULL
+       ORDER BY deleted_at DESC`,
+    [business_id]
+  );
+}
+
+/** Sampah -- daftar batch upload yang sudah dibuang, plus berapa transaksi
+ * yang ikut terbuang bareng batch-nya (dihitung dari transactions yang
+ * source_id-nya sama DAN deleted_at-nya sama -- pendekatan sederhana,
+ * lihat catatan di restoreSource() untuk alasan kenapa ini cukup). */
+export async function listTrashSources(db: Db, business_id: string) {
+  return db.all(
+    `SELECT s.source_id, s.original_filename, s.uploaded_at, s.deleted_at, s.deleted_by,
+              (SELECT COUNT(*)::int FROM transactions t
+                WHERE t.source_id = s.source_id AND t.deleted_at IS NOT NULL) as trashed_transaction_count
+       FROM sources s
+       WHERE s.business_id = $1 AND s.deleted_at IS NOT NULL
+       ORDER BY s.deleted_at DESC`,
+    [business_id]
   );
 }
 
@@ -115,7 +228,7 @@ async function getTopProducts(db: Db, business_id: string, dateFrom: string, dat
     `SELECT tl.product_or_service AS produk, SUM(tl.quantity) AS qty_terjual
        FROM transaction_lines tl
        JOIN transactions t ON t.row_id = tl.transaction_row_id
-       WHERE t.business_id = $1 AND t.status = 'ACTIVE'
+       WHERE t.business_id = $1 AND t.status = 'ACTIVE' AND t.deleted_at IS NULL
          AND t.transaction_date BETWEEN $2 AND $3
        GROUP BY tl.product_or_service
        ORDER BY qty_terjual DESC
@@ -145,16 +258,16 @@ export async function getDailyReport(db: Db, business_id: string, date: string) 
  * top_produk). */
 export async function getWeeklyReport(db: Db, business_id: string) {
   const latest = (await db.get(
-    `SELECT MAX(transaction_date) as d FROM transactions WHERE business_id = $1 AND status = 'ACTIVE'`,
+    `SELECT MAX(transaction_date) as d FROM transactions WHERE business_id = $1 AND status = 'ACTIVE' AND deleted_at IS NULL`,
     [business_id]
   )) as { d: string | null };
-  const dateTo = latest.d ?? new Date().toISOString().slice(0, 10);
+  const dateTo = latest.d ?? getTodayLocalDate();
   const dateFrom = shiftDate(dateTo, -6);
 
   const row = (await db.get(
     `SELECT COUNT(*)::int as orders, COALESCE(SUM(total_amount), 0) as revenue
        FROM transactions
-       WHERE business_id = $1 AND status = 'ACTIVE' AND transaction_date BETWEEN $2 AND $3`,
+       WHERE business_id = $1 AND status = 'ACTIVE' AND deleted_at IS NULL AND transaction_date BETWEEN $2 AND $3`,
     [business_id, dateFrom, dateTo]
   )) as { orders: number; revenue: number };
 
@@ -169,6 +282,49 @@ export async function getWeeklyReport(db: Db, business_id: string) {
   };
 }
 
+/** Monthly report — kalender bulan penuh (tanggal 1 s/d akhir bulan), BUKAN
+ * trailing-30-hari, supaya cocok dengan cara pemilik warung mikir ("laporan
+ * Agustus"). Default ke BULAN KALENDER SEBELUMNYA kalau year/month tidak
+ * diisi -- soalnya kalau ini dikirim otomatis tanggal 1 tiap bulan (lihat
+ * TODO_N8N.md), "bulan ini" baru punya 0-1 hari data, jadi tidak berguna
+ * kalau default-nya bulan berjalan. year/month tetap bisa diisi manual untuk
+ * query bulan tertentu (dipakai app/api/reports/monthly/route.ts). */
+export async function getMonthlyReport(db: Db, business_id: string, year?: number, month?: number) {
+  let y = year;
+  let m = month; // 1-12
+  if (!y || !m) {
+    const [ty, tm] = getTodayLocalDate().split("-").map(Number);
+    m = tm - 1;
+    y = ty;
+    if (m === 0) {
+      m = 12;
+      y -= 1;
+    }
+  }
+
+  const mm = String(m).padStart(2, "0");
+  const dateFrom = `${y}-${mm}-01`;
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate(); // hari-0 bulan berikutnya = hari terakhir bulan ini
+  const dateTo = `${y}-${mm}-${String(lastDay).padStart(2, "0")}`;
+
+  const row = (await db.get(
+    `SELECT COUNT(*)::int as orders, COALESCE(SUM(total_amount), 0) as revenue
+       FROM transactions
+       WHERE business_id = $1 AND status = 'ACTIVE' AND deleted_at IS NULL AND transaction_date BETWEEN $2 AND $3`,
+    [business_id, dateFrom, dateTo]
+  )) as { orders: number; revenue: number };
+
+  const aov = row.orders > 0 ? round2(row.revenue / row.orders) : 0;
+
+  return {
+    periode: `${dateFrom} s/d ${dateTo}`,
+    total_revenue: round2(row.revenue),
+    total_orders: row.orders,
+    aov,
+    top_produk: await getTopProducts(db, business_id, dateFrom, dateTo, 5),
+  };
+}
+
 /** Tren pendapatan harian untuk `days` hari terakhir (default 14), rapat
  * sampai tanggal terbaru yang punya data ACTIVE (bukan selalu "hari ini",
  * supaya grafik tidak berakhir di angka 0 kalau belum ada transaksi hari
@@ -176,17 +332,17 @@ export async function getWeeklyReport(db: Db, business_id: string) {
  * (zero-filled) supaya barnya tidak bolong di grafik. */
 export async function getDailyTrend(db: Db, business_id: string, days = 14) {
   const latest = (await db.get(
-    `SELECT MAX(transaction_date) as d FROM transactions WHERE business_id = $1 AND status = 'ACTIVE'`,
+    `SELECT MAX(transaction_date) as d FROM transactions WHERE business_id = $1 AND status = 'ACTIVE' AND deleted_at IS NULL`,
     [business_id]
   )) as { d: string | null };
-  const dateTo = latest.d ?? new Date().toISOString().slice(0, 10);
+  const dateTo = latest.d ?? getTodayLocalDate();
   const dateFrom = shiftDate(dateTo, -(days - 1));
 
   const rows = (await db.all(
     `SELECT transaction_date as date, COALESCE(SUM(total_amount), 0) as revenue,
               COUNT(*)::int as orders
        FROM transactions
-       WHERE business_id = $1 AND status = 'ACTIVE' AND transaction_date BETWEEN $2 AND $3
+       WHERE business_id = $1 AND status = 'ACTIVE' AND deleted_at IS NULL AND transaction_date BETWEEN $2 AND $3
        GROUP BY transaction_date`,
     [business_id, dateFrom, dateTo]
   )) as { date: string; revenue: number; orders: number }[];
@@ -219,7 +375,7 @@ export async function getTopProductsInRange(
  * dari 1-2 data point saja. */
 export async function getBusiestSlot(db: Db, business_id: string, days = 14) {
   const latest = (await db.get(
-    `SELECT MAX(transaction_date) as d FROM transactions WHERE business_id = $1 AND status = 'ACTIVE'`,
+    `SELECT MAX(transaction_date) as d FROM transactions WHERE business_id = $1 AND status = 'ACTIVE' AND deleted_at IS NULL`,
     [business_id]
   )) as { d: string | null };
   if (!latest.d) return null;
@@ -228,7 +384,7 @@ export async function getBusiestSlot(db: Db, business_id: string, days = 14) {
 
   const totalRow = (await db.get(
     `SELECT COUNT(*)::int as n FROM transactions
-       WHERE business_id = $1 AND status = 'ACTIVE' AND transaction_date BETWEEN $2 AND $3`,
+       WHERE business_id = $1 AND status = 'ACTIVE' AND deleted_at IS NULL AND transaction_date BETWEEN $2 AND $3`,
     [business_id, dateFrom, dateTo]
   )) as { n: number };
   if (totalRow.n < 5) return null;
@@ -238,7 +394,7 @@ export async function getBusiestSlot(db: Db, business_id: string, days = 14) {
   const dayRow = (await db.get(
     `SELECT EXTRACT(DOW FROM transaction_date::date)::int as dow, COUNT(*)::int as n
        FROM transactions
-       WHERE business_id = $1 AND status = 'ACTIVE' AND transaction_date BETWEEN $2 AND $3
+       WHERE business_id = $1 AND status = 'ACTIVE' AND deleted_at IS NULL AND transaction_date BETWEEN $2 AND $3
        GROUP BY dow ORDER BY n DESC LIMIT 1`,
     [business_id, dateFrom, dateTo]
   )) as { dow: number; n: number } | undefined;
@@ -246,7 +402,7 @@ export async function getBusiestSlot(db: Db, business_id: string, days = 14) {
   const hourRow = (await db.get(
     `SELECT substring(transaction_time from 1 for 2) as hour, COUNT(*)::int as n
        FROM transactions
-       WHERE business_id = $1 AND status = 'ACTIVE' AND transaction_date BETWEEN $2 AND $3
+       WHERE business_id = $1 AND status = 'ACTIVE' AND deleted_at IS NULL AND transaction_date BETWEEN $2 AND $3
          AND transaction_time IS NOT NULL
        GROUP BY hour ORDER BY n DESC LIMIT 1`,
     [business_id, dateFrom, dateTo]
@@ -261,6 +417,60 @@ export async function getBusiestSlot(db: Db, business_id: string, days = 14) {
     hour_start: hourNum !== null ? `${String(hourNum).padStart(2, "0")}:00` : null,
     hour_end: hourNum !== null ? `${String((hourNum + 1) % 24).padStart(2, "0")}:00` : null,
   };
+}
+
+/** Ringkasan omzet 4 periode (hari ini/minggu ini/bulan ini/tahun ini),
+ * semua "TO DATE" (dari awal periode kalender sampai HARI INI), bukan
+ * "trailing N hari" seperti getWeeklyReport, dan bukan "bulan kemarin"
+ * seperti default getMonthlyReport -- dipakai khusus untuk hero omzet di
+ * paling atas Overview (7 Sept 2026), yang tujuannya menjawab "progress
+ * gue SEKARANG gimana", bukan laporan retrospektif. Minggu dihitung mulai
+ * Senin (konvensi Indonesia), bulan mulai tanggal 1, tahun mulai 1
+ * Januari -- semua menurut kalender WIB (getTodayLocalDate()).
+ *
+ * `data_since` = tanggal transaksi ACTIVE paling awal (null kalau belum
+ * ada sama sekali) -- dipakai UI untuk kasih keterangan jujur kalau kartu
+ * "Tahun Ini" datanya baru berjalan sebagian (mis. baru mulai pakai
+ * sistem bulan lalu), bukan pura-pura itu angka setahun penuh. */
+export async function getRevenueSummaryPeriods(db: Db, business_id: string) {
+  const today = getTodayLocalDate();
+  const weekStart = startOfWeek(today);
+  const monthStart = today.slice(0, 7) + "-01";
+  const yearStart = today.slice(0, 4) + "-01-01";
+
+  async function sumRange(dateFrom: string, dateTo: string) {
+    const row = (await db.get(
+      `SELECT COUNT(*)::int as orders, COALESCE(SUM(total_amount), 0) as revenue
+         FROM transactions
+        WHERE business_id = $1 AND status = 'ACTIVE' AND deleted_at IS NULL
+          AND transaction_date BETWEEN $2 AND $3`,
+      [business_id, dateFrom, dateTo]
+    )) as { orders: number; revenue: number };
+    return { revenue: round2(row.revenue), orders: row.orders };
+  }
+
+  const earliest = (await db.get(
+    `SELECT MIN(transaction_date) as d FROM transactions
+       WHERE business_id = $1 AND status = 'ACTIVE' AND deleted_at IS NULL`,
+    [business_id]
+  )) as { d: string | null };
+
+  const [day, week, month, year] = await Promise.all([
+    sumRange(today, today),
+    sumRange(weekStart, today),
+    sumRange(monthStart, today),
+    sumRange(yearStart, today),
+  ]);
+
+  return { date: today, day, week, month, year, data_since: earliest.d };
+}
+
+function startOfWeek(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00Z");
+  const dow = d.getUTCDay(); // 0=Minggu, 1=Senin, ... 6=Sabtu
+  const daysSinceMonday = dow === 0 ? 6 : dow - 1;
+  d.setUTCDate(d.getUTCDate() - daysSinceMonday);
+  return d.toISOString().slice(0, 10);
 }
 
 function shiftDate(dateStr: string, days: number): string {

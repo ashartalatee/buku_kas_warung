@@ -1,10 +1,10 @@
-import { OverviewPage } from "@/components/OverviewPage";
+import { TrashPage } from "@/components/TrashPage";
 import { AdminShell } from "@/components/AdminShell";
 
 export default function Page() {
   return (
     <AdminShell>
-      <OverviewPage />
+      <TrashPage />
     </AdminShell>
   );
 }

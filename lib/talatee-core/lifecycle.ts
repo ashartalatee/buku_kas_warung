@@ -194,3 +194,211 @@ export async function resolveDuplicateFlag(
 
   return { flag_id, resolution_status: resolution };
 }
+
+// ============================================================================
+// SAMPAH (7 Sept 2026) -- soft delete + hard delete, khusus dibuat untuk
+// kebutuhan bersih-bersih data LATIHAN/TESTING (lihat DASHBOARD_TERANG_
+// MOBILE_NOTES.md untuk konteks diskusinya). Pola 2 tahap yang SENGAJA:
+//
+//   1. softDelete*  -- reversibel, "ke Sampah". Baris TETAP ada di
+//      database (deleted_at diisi), langsung hilang dari semua tampilan/
+//      laporan (lihat filter "AND deleted_at IS NULL" di metrics.ts,
+//      duplicate.ts, ingest.ts). Bisa dipulihkan kapan saja lewat
+//      restore*.
+//   2. hardDelete*  -- PERMANEN, TIDAK BISA DIBATALKAN. Sengaja TIDAK
+//      diekspos lewat rute yang sama dengan soft delete -- di UI/API,
+//      hard delete cuma bisa dipanggil dari halaman Sampah (2 langkah
+//      sadar sebelum data beneran hilang), tidak pernah langsung dari
+//      halaman Transaksi/Upload.
+//
+// Ini beda dari voidTransaction() di atas: VOID artinya "transaksi ini
+// beneran terjadi tapi dibatalkan" (bagian dari riwayat bisnis, harus
+// tetap ada selamanya untuk audit). Soft-delete artinya "baris ini
+// sampah/tidak relevan sama sekali" (data uji coba, salah upload, dst) --
+// makanya boleh dihapus permanen, sedangkan VOID tidak.
+
+export class DeletionBlockedError extends LifecycleError {}
+
+/** Hapus 1 transaksi ke Sampah (reversibel). Tidak peduli status-nya apa
+ * (ACTIVE/NEEDS_REVIEW/VOID/SUPERSEDED) -- untuk keperluan bersih-bersih
+ * data uji, semua boleh dibuang, bukan cuma yang ACTIVE. */
+export async function softDeleteTransaction(db: Db, row_id: string, deleted_by: string) {
+  const result = await db.run(
+    `UPDATE transactions SET deleted_at = now(), deleted_by = $2 WHERE row_id = $1 AND deleted_at IS NULL`,
+    [row_id, deleted_by]
+  );
+  if (result.rowCount === 0) {
+    const exists = await db.get(`SELECT row_id FROM transactions WHERE row_id = $1`, [row_id]);
+    throw new LifecycleError(exists ? "Transaksi ini sudah ada di Sampah." : "Transaksi tidak ditemukan.");
+  }
+  return { row_id, deleted: true };
+}
+
+export async function restoreTransaction(db: Db, row_id: string) {
+  const result = await db.run(
+    `UPDATE transactions SET deleted_at = NULL, deleted_by = NULL WHERE row_id = $1 AND deleted_at IS NOT NULL`,
+    [row_id]
+  );
+  if (result.rowCount === 0) {
+    throw new LifecycleError("Transaksi tidak ada di Sampah (atau tidak ditemukan).");
+  }
+  return { row_id, deleted: false };
+}
+
+/** Hapus 1 batch upload ke Sampah -- source-nya DAN semua transaksi yang
+ * berasal dari situ, sekaligus dalam 1 DB transaction (semua-atau-tidak-
+ * sama-sekali, supaya tidak ada baris yang "setengah kehapus" kalau ada
+ * error di tengah). */
+export async function softDeleteSource(db: Db, source_id: string, deleted_by: string) {
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+
+    const src = await client.query(`SELECT source_id FROM sources WHERE source_id = $1 AND deleted_at IS NULL`, [
+      source_id,
+    ]);
+    if (src.rowCount === 0) {
+      throw new LifecycleError("Batch upload ini tidak ditemukan (atau sudah ada di Sampah).");
+    }
+
+    await client.query(`UPDATE sources SET deleted_at = now(), deleted_by = $2 WHERE source_id = $1`, [
+      source_id,
+      deleted_by,
+    ]);
+    const txns = await client.query(
+      `UPDATE transactions SET deleted_at = now(), deleted_by = $2
+         WHERE source_id = $1 AND deleted_at IS NULL
+         RETURNING row_id`,
+      [source_id, deleted_by]
+    );
+
+    await client.query("COMMIT");
+    return { source_id, deleted: true, affected_transactions: txns.rowCount };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/** Pulihkan 1 batch upload -- catatan: memulihkan SEMUA transaksi dari
+ * source ini yang sedang di Sampah, termasuk yang (secara kebetulan)
+ * sebelumnya dihapus satu-satu lewat softDeleteTransaction, bukan cuma
+ * yang ikut terhapus lewat softDeleteSource. Ini simplifikasi yang
+ * disengaja -- sistem ini tidak mencatat "batch mana yang menyebabkan
+ * baris ini kehapus", cuma "kapan". Untuk kebutuhan data uji/testing ini
+ * cukup aman; kalau nanti butuh presisi per-aksi, perlu kolom tambahan. */
+export async function restoreSource(db: Db, source_id: string) {
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+
+    const src = await client.query(`SELECT source_id FROM sources WHERE source_id = $1 AND deleted_at IS NOT NULL`, [
+      source_id,
+    ]);
+    if (src.rowCount === 0) {
+      throw new LifecycleError("Batch upload ini tidak ada di Sampah (atau tidak ditemukan).");
+    }
+
+    await client.query(`UPDATE sources SET deleted_at = NULL, deleted_by = NULL WHERE source_id = $1`, [source_id]);
+    const txns = await client.query(
+      `UPDATE transactions SET deleted_at = NULL, deleted_by = NULL
+         WHERE source_id = $1 AND deleted_at IS NOT NULL
+         RETURNING row_id`,
+      [source_id]
+    );
+
+    await client.query("COMMIT");
+    return { source_id, deleted: false, affected_transactions: txns.rowCount };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/** Hapus 1 transaksi PERMANEN. Membersihkan semua yang "menempel" dulu
+ * (urutan penting -- FK-nya tidak ON DELETE CASCADE):
+ *   1. transaction_events yang menyebut baris ini (from_row_id/to_row_id)
+ *      -- jejak koreksi/void. Untuk data uji ini aman ikut dibuang,
+ *      beda dengan transaksi bisnis asli yang jejaknya harus dijaga.
+ *   2. duplicate_flags yang menyebut baris ini (di salah satu sisi).
+ *   3. previous_row_id di baris LAIN yang menunjuk ke baris ini (kalau
+ *      baris ini pernah "dikoreksi jadi versi baru", versi barunya
+ *      menunjuk balik ke sini lewat previous_row_id) -- di-NULL-kan dulu,
+ *      bukan ikut dihapus (versi barunya sendiri tidak salah, cuma
+ *      kehilangan link ke versi sebelumnya).
+ *   4. transaction_lines ikut lewat ON DELETE CASCADE otomatis.
+ *   5. baris transactions itu sendiri.
+ * WAJIB dipanggil hanya untuk baris yang statusnya sudah di Sampah
+ * (deleted_at IS NOT NULL) -- dijaga di sini, bukan cuma di lapisan API,
+ * supaya fungsi ini sendiri tidak bisa "kebobolan" menghapus data yang
+ * belum sempat lewat tahap Sampah. */
+export async function hardDeleteTransaction(db: Db, row_id: string) {
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+
+    const txn = await client.query(`SELECT row_id, deleted_at FROM transactions WHERE row_id = $1`, [row_id]);
+    if (txn.rowCount === 0) throw new LifecycleError("Transaksi tidak ditemukan.");
+    if (!txn.rows[0].deleted_at) {
+      throw new DeletionBlockedError(
+        "Transaksi ini belum ada di Sampah -- hapus ke Sampah dulu sebelum bisa dihapus permanen."
+      );
+    }
+
+    await client.query(`DELETE FROM transaction_events WHERE from_row_id = $1 OR to_row_id = $1`, [row_id]);
+    await client.query(`DELETE FROM duplicate_flags WHERE transaction_row_id = $1 OR candidate_row_id = $1`, [
+      row_id,
+    ]);
+    await client.query(`UPDATE transactions SET previous_row_id = NULL WHERE previous_row_id = $1`, [row_id]);
+    await client.query(`DELETE FROM transactions WHERE row_id = $1`, [row_id]);
+
+    await client.query("COMMIT");
+    return { row_id, permanently_deleted: true };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/** Hapus 1 batch upload PERMANEN -- source-nya DAN semua transaksi
+ * turunannya. Sama seperti hardDeleteTransaction, WAJIB source-nya sudah
+ * di Sampah dulu. */
+export async function hardDeleteSource(db: Db, source_id: string) {
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+
+    const src = await client.query(`SELECT source_id, deleted_at FROM sources WHERE source_id = $1`, [source_id]);
+    if (src.rowCount === 0) throw new LifecycleError("Batch upload tidak ditemukan.");
+    if (!src.rows[0].deleted_at) {
+      throw new DeletionBlockedError(
+        "Batch upload ini belum ada di Sampah -- hapus ke Sampah dulu sebelum bisa dihapus permanen."
+      );
+    }
+
+    const rows = await client.query(`SELECT row_id FROM transactions WHERE source_id = $1`, [source_id]);
+    for (const { row_id } of rows.rows as { row_id: string }[]) {
+      await client.query(`DELETE FROM transaction_events WHERE from_row_id = $1 OR to_row_id = $1`, [row_id]);
+      await client.query(`DELETE FROM duplicate_flags WHERE transaction_row_id = $1 OR candidate_row_id = $1`, [
+        row_id,
+      ]);
+      await client.query(`UPDATE transactions SET previous_row_id = NULL WHERE previous_row_id = $1`, [row_id]);
+    }
+    await client.query(`DELETE FROM transactions WHERE source_id = $1`, [source_id]);
+    await client.query(`DELETE FROM sources WHERE source_id = $1`, [source_id]);
+
+    await client.query("COMMIT");
+    return { source_id, permanently_deleted: true, affected_transactions: rows.rowCount };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
