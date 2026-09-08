@@ -17,6 +17,17 @@ export type CorrectionReason =
   | "Tanggal salah"
   | "Lainnya";
 
+// Alasan penyesuaian stok manual (lihat products.ts / stock_adjustments) --
+// pola sama seperti CorrectionReason: daftar tertutup supaya riwayat stok
+// gampang dianalisis nanti (bukan free-text semua), sama seperti alasan
+// koreksi transaksi.
+export type StockAdjustmentReason =
+  | "Stok masuk"
+  | "Terjual manual"
+  | "Rusak/hilang"
+  | "Koreksi hitung ulang"
+  | "Lainnya";
+
 export interface RawCsvRow {
   tanggal?: string;
   waktu?: string;

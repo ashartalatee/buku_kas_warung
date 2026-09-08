@@ -71,11 +71,28 @@ kode yang ada. Tabel ini adalah **kenyataan di kode**, bukan visi:
 - **Migrasi ke PostgreSQL** (dari SQLite) — selesai total, teruji 15 skenario 2x,
   data pilot (172 transaksi) pindah 100% utuh
 - Backup otomatis via `pg_dump`, retensi 14 hari, sudah dites bisa di-restore
+- **Kelola produk & stok** (`/products`, tabel `products` + `stock_adjustments`) —
+  CRUD produk (nama/kategori/satuan/harga/ambang stok menipis), penyesuaian stok
+  manual (delta + alasan wajib, append-only, ada riwayat), arsip/aktifkan ulang
+  produk (soft delete, bukan hapus permanen). **Catatan penting: stok TIDAK
+  otomatis berkurang saat ada transaksi masuk** — `product_or_service` di
+  `transaction_lines` masih teks bebas, belum di-link ke tabel `products`. Jadi
+  ini murni pencatatan stok manual (mis. dicek & disesuaikan tiap hari/minggu),
+  bukan sistem inventory real-time yang sinkron dengan penjualan. Jangan
+  diklaim ke client sebagai "stok otomatis update tiap transaksi".
 
 ### Belum ada (jangan diklaim ke client)
-- Laporan **mingguan/bulanan terjadwal otomatis** (mingguan cuma bisa ditanya manual,
-  bulanan tidak ada sama sekali)
-- Kelola stok/produk, input manual lewat web
+- **Laporan mingguan/bulanan TERJADWAL OTOMATIS** — per 6 Sept 2026, endpoint
+  backend-nya sudah ada untuk keduanya (`/api/reports/weekly`,
+  `/api/reports/monthly`, keduanya bisa dites manual/lewat n8n), TAPI belum
+  ada cron/jadwal yang benar-benar memicunya otomatis tiap minggu/bulan —
+  itu bagian konfigurasi n8n (workflow baru: Cron Trigger → panggil endpoint
+  → format pesan → kirim WA), yang belum dikerjakan. **Sampai workflow n8n
+  itu dibuat, tetap jangan diklaim "laporan mingguan/bulanan otomatis
+  terkirim sendiri" ke client** — baru laporan HARIAN yang benar-benar
+  jalan otomatis (jam 20:00). Laporan bulanan juga belum ada keyword WA-nya
+  (WA Q&A baru punya "minggu ini", belum "bulan ini"/"bulan lalu").
+- Sinkronisasi stok otomatis dari transaksi (lihat catatan di atas)
 - Retry queue / status tracking pengiriman WA (kalau WA gagal, tidak ada retry
   otomatis, tidak ada tracking PENDING→SENT→DELIVERED)
 - Alert otomatis (penjualan turun, stok menipis, anomali)
@@ -156,11 +173,18 @@ Windows kadang simpan file dalam encoding yang bikin parser biasa gagal).
 
 ## 7. Isu yang diketahui, belum terselesaikan
 
-- **"Tanggal transaksi ada di masa depan"** — banyak transaksi lama (Agustus 2026)
-  ditandai `NEEDS_REVIEW` dengan pesan ini. Penyebabnya belum diinvestigasi — perlu
-  dicek logic validasi tanggal di `lib/talatee-core/validation.ts`, kemungkinan
-  device/server yang jadi sumber timestamp beda zona waktu atau salah baca "hari
-  ini" dari OS.
+- ~~**"Tanggal transaksi ada di masa depan"**~~ ✅ **selesai (5 Sept 2026)** — akar
+  penyebab: beberapa tempat menghitung "hari ini" pakai
+  `new Date().toISOString().slice(0, 10)`, yang selalu tanggal kalender **UTC**,
+  bukan WIB. Antara jam 00:00–06:59 WIB, UTC masih tanggal kemarin, jadi transaksi
+  hari ini (WIB, benar) terlihat "di masa depan". Diperbaiki via
+  `lib/talatee-core/date-utils.ts` (`getTodayLocalDate()`, timezone-aware, default
+  Asia/Jakarta, bisa diatur lewat `BUSINESS_TIMEZONE` di `.env.local`), diterapkan
+  di `validation.ts`, `metrics.ts`, dan 3 route API yang sebelumnya pakai pola yang
+  sama. Data lama yang sudah kadung ke-flag NEEDS_REVIEW dibereskan lewat
+  `npm run fix-future-dates -- --apply` (script hanya menyentuh baris yang
+  benar-benar false-positive murni — baris dengan error gabungan atau yang
+  tanggalnya beneran salah tetap masuk review manusia seperti biasa).
 - **WhatsApp rentan putus** — dokumentasi setup sendiri (`Setup_waha_n8n.md`, tidak
   di-commit ke git karena berisi kredensial) mencatat WebSocket suka putus-putus di
   jaringan tertentu, belum terdiagnosis. Sesi WA juga harus login ulang manual kalau
@@ -210,8 +234,8 @@ ini otomatis muncul sebagai 1 "Business" di dashboard Talatee.
 
 1. ~~Backup otomatis~~ ✅ selesai
 2. ~~Migrasi Postgres~~ ✅ selesai
-3. Investigasi bug "tanggal di masa depan"
+3. ~~Investigasi bug "tanggal di masa depan"~~ ✅ selesai (5 Sept 2026) — lihat §7
 4. Ganti semua kredensial default sebelum dipakai produksi/demo ke client
-5. Perbaiki klaim laporan mingguan/bulanan (bangun beneran, atau jangan diklaim di
-   materi promosi dulu)
+5. ⚠️ Laporan mingguan/bulanan — backend selesai (6 Sept 2026), tinggal setup
+   Cron Trigger + format pesan di n8n supaya benar-benar terkirim otomatis
 6. Auth multi-user sungguhan — HANYA kalau arah bisnis jelas condong ke SaaS Mandiri

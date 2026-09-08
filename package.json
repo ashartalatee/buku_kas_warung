@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "init-business": "tsx scripts/init-business.ts",
-    "backup": "tsx scripts/backup.ts"
+    "backup": "tsx scripts/backup.ts",
+    "fix-future-dates": "tsx scripts/fix-future-date-false-positives.ts"
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",

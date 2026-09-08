@@ -12,13 +12,14 @@ import {
   getWeeklyReport,
   getBusiestSlot,
 } from "@/lib/talatee-core/metrics";
+import { getTodayLocalDate } from "@/lib/talatee-core/date-utils";
 import { getDb } from "../../_lib/db";
 import { getCurrentUser } from "../../_lib/session";
 
 export async function GET() {
   const user = getCurrentUser();
   const db = getDb();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getTodayLocalDate();
 
   const businessRow = (await db.get(`SELECT business_name FROM businesses WHERE business_id = $1`, [
     user.business_id,

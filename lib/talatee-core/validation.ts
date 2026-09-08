@@ -1,4 +1,5 @@
 import { ExtractedTransaction, ParsedLine, RawCsvRow, ValidationResult } from "./types";
+import { getTodayLocalDate } from "./date-utils";
 
 export const REQUIRED_HEADERS = ["tanggal", "produk", "qty", "harga_satuan", "subtotal"];
 
@@ -147,7 +148,10 @@ export function validateBusinessRules(txn: ExtractedTransaction): ValidationResu
     }
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  // Bug lama di sini: `new Date().toISOString().slice(0, 10)` (tanggal UTC),
+  // dibandingkan terhadap transaction_date yang tanggal kalender WIB --
+  // lihat date-utils.ts untuk analisis lengkap kenapa itu salah.
+  const today = getTodayLocalDate();
   if (txn.transaction_date > today) {
     errors.push(`Tanggal transaksi (${txn.transaction_date}) ada di masa depan`);
   }

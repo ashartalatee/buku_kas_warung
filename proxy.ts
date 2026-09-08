@@ -24,6 +24,7 @@ const N8N_ROUTES = [
   "/api/transactions/upload",
   "/api/reports/daily",
   "/api/reports/weekly",
+  "/api/reports/monthly",
   "/api/backup",
 ];
 
@@ -33,6 +34,48 @@ const N8N_ROUTES = [
 const SHARE_LINK_ROUTES = ["/dashboard", "/api/reports/overview"];
 
 const PUBLIC_ROUTES = ["/login", "/api/login"];
+
+// Halaman yang dilihat kalau link WA salah/kadaluarsa. Ini titik kontak
+// client yang penting -- kalau tampilannya cuma teks polos, kesannya
+// aplikasi rusak. Jadi disamakan gaya visualnya (navy/krem/mono) dengan
+// app/dashboard/page.tsx, dibuat manual di sini (bukan render React)
+// karena proxy jalan di Edge Runtime sebelum masuk ke halaman React mana pun.
+function invalidShareLinkPage(): NextResponse {
+  const html = `<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Link tidak valid — Talatee</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+    background:#f3efe0;color:#2b2a25;padding:24px;
+    font-family:'Courier New',Consolas,monospace;}
+  .card{max-width:340px;width:100%;background:#fbfaf3;border:1px solid #e6e0c9;
+    border-radius:12px;padding:28px 24px;text-align:center;}
+  .badge{display:inline-flex;align-items:center;justify-content:center;width:46px;height:46px;
+    border-radius:999px;background:#142850;color:#fff;font-size:20px;font-weight:700;margin-bottom:14px;}
+  h1{font-size:15px;margin:0 0 8px;color:#142850;}
+  p{font-size:12.5px;line-height:1.6;color:#5b5748;margin:0;}
+  .foot{margin-top:18px;font-size:9.5px;letter-spacing:.12em;color:#a39c85;text-transform:uppercase;}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">!</div>
+    <h1>Link dashboard tidak valid</h1>
+    <p>Link ini sudah kadaluarsa atau salah ketik. Minta link dashboard terbaru langsung lewat WhatsApp toko Anda.</p>
+    <div class="foot">Talatee Automation Lab</div>
+  </div>
+</body>
+</html>`;
+  return new NextResponse(html, {
+    status: 401,
+    headers: { "content-type": "text/html; charset=utf-8" },
+  });
+}
 
 export default function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -50,10 +93,7 @@ export default function proxy(request: NextRequest) {
           { status: 401 }
         );
       }
-      return new NextResponse(
-        "Link tidak valid. Minta link dashboard terbaru lewat WhatsApp toko Anda.",
-        { status: 401 }
-      );
+      return invalidShareLinkPage();
     }
     return NextResponse.next();
   }
