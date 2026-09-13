@@ -10,6 +10,14 @@
 //
 // Endpoint yang dipanggil n8n (lihat n8n-workflows-updated/*.json):
 //   /api/transactions/upload, /api/reports/daily, /api/reports/weekly
+//
+// PENTING (fix 9 Sept 2026): beberapa endpoint di N8N_ROUTES di bawah ini
+// JUGA dipanggil langsung dari UI admin lewat browser (bukan cuma n8n) --
+// contoh nyata: /api/transactions/upload dipanggil UploadCsvForm.tsx pas
+// admin upload manual. Makanya N8N_ROUTES menerima X-Api-Key ATAU cookie
+// sesi (salah satu cukup), BUKAN cuma X-Api-Key seperti sebelumnya --
+// kalau dipaksa cuma X-Api-Key, upload lewat browser akan SELALU gagal
+// walau sudah login, karena browser tidak pernah kirim header itu.
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
@@ -18,6 +26,7 @@ import {
   verifyLocalApiKey,
   verifyShareKey,
   SESSION_COOKIE_NAME,
+  PLATFORM_ADMIN_SESSION_ID,
 } from "./app/api/_lib/auth";
 
 const N8N_ROUTES = [
@@ -99,14 +108,33 @@ export default function proxy(request: NextRequest) {
   }
 
   if (N8N_ROUTES.some((p) => pathname === p)) {
+    // FIX (9 Sept 2026): rute ini SEBELUMNYA cuma menerima X-Api-Key,
+    // padahal beberapa di antaranya (khususnya /api/transactions/upload)
+    // dipanggil dari 2 arah -- n8n (server-to-server) DAN langsung dari
+    // UI admin lewat browser (UploadCsvForm.tsx, pakai cookie sesi login,
+    // bukan API key). Efeknya: upload lewat halaman Upload Data di admin
+    // SELALU gagal dengan "X-Api-Key tidak valid" walau sudah login,
+    // karena browser memang tidak pernah kirim header X-Api-Key.
+    // Sekarang terima SALAH SATU: X-Api-Key valid (jalur n8n) ATAU cookie
+    // sesi valid (jalur admin browser) -- bukan cuma satu-satunya jalur.
     const apiKey = request.headers.get("x-api-key");
-    if (!verifyLocalApiKey(apiKey)) {
-      return NextResponse.json(
-        { error: "X-Api-Key tidak valid atau belum diset. Cek N8N_LOCAL_API_KEY di .env.local." },
-        { status: 401 }
-      );
+    if (verifyLocalApiKey(apiKey)) {
+      return NextResponse.next();
     }
-    return NextResponse.next();
+
+    const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+    const businessId = verifySessionToken(sessionCookie);
+    if (businessId) {
+      return NextResponse.next();
+    }
+
+    return NextResponse.json(
+      {
+        error:
+          "Butuh salah satu: header X-Api-Key yang valid (untuk n8n, cek N8N_LOCAL_API_KEY di .env.local) atau login admin yang masih aktif.",
+      },
+      { status: 401 }
+    );
   }
 
   const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME)?.value;
@@ -118,6 +146,15 @@ export default function proxy(request: NextRequest) {
     }
     const loginUrl = new URL("/login", request.url);
     return NextResponse.redirect(loginUrl);
+  }
+
+  // 12 Sept 2026: /ops (Panel Admin Lengkap) HANYA untuk Platform Admin
+  // (Ashar sendiri) -- BUKAN untuk business owner/client biasa, walau
+  // sesi mereka valid. Sebelum ini, /ops cuma "tersembunyi" (tidak ada
+  // link ke situ), bukan benar-benar terkunci -- client yang iseng coba
+  // alamat itu bisa masuk. Sekarang benar-benar ditolak di level proxy.
+  if (pathname.startsWith("/ops") && businessId !== PLATFORM_ADMIN_SESSION_ID) {
+    return NextResponse.redirect(new URL("/", request.url));
   }
 
   return NextResponse.next();

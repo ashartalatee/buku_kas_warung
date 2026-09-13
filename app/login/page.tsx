@@ -24,6 +24,10 @@ export default function LoginPage() {
         setError(data.error ?? "Gagal login.");
         return;
       }
+      // 12 Sept 2026: /ops (panel monitoring internal) dihapus dari repo
+      // ini -- Ashar sudah punya sistem monitoring terpisah. Semua login
+      // (Platform Admin maupun business owner) sekarang diarahkan ke "/"
+      // yang sama.
       router.replace("/");
       router.refresh();
     } catch {

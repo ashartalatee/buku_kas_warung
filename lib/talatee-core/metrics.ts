@@ -156,7 +156,7 @@ export async function listTransactions(db: Db, business_id: string, date?: strin
   const params = date ? [business_id, date] : [business_id];
   return db.all(
     `SELECT row_id, transaction_id, version, transaction_date, transaction_time,
-              total_amount, line_item_count, status, created_at, resolved_at
+              total_amount, line_item_count, status, channel, created_at, resolved_at
        FROM transactions
        WHERE business_id = $1 AND status IN ('ACTIVE', 'NEEDS_REVIEW', 'VOID') AND deleted_at IS NULL ${dateFilter}
        ORDER BY transaction_date DESC, transaction_time DESC`,
@@ -432,10 +432,25 @@ export async function getBusiestSlot(db: Db, business_id: string, days = 14) {
  * ada sama sekali) -- dipakai UI untuk kasih keterangan jujur kalau kartu
  * "Tahun Ini" datanya baru berjalan sebagian (mis. baru mulai pakai
  * sistem bulan lalu), bukan pura-pura itu angka setahun penuh. */
+/** Awal triwulan (Q1 Jan-Mar, Q2 Apr-Jun, Q3 Jul-Sep, Q4 Okt-Des) yang
+ * memuat tanggal `dateStr`. Dipakai untuk kartu "Triwulan Ini" (12 Sept
+ * 2026, diskusi soal penyajian angka di dashboard publik client). */
+function startOfQuarter(dateStr: string): string {
+  const month = Number(dateStr.slice(5, 7));
+  const quarterStartMonth = Math.floor((month - 1) / 3) * 3 + 1;
+  return `${dateStr.slice(0, 4)}-${String(quarterStartMonth).padStart(2, "0")}-01`;
+}
+
+/** Nomor triwulan 1-4 untuk ditampilkan di label ("Triwulan 3 2026"). */
+function quarterNumber(dateStr: string): number {
+  return Math.floor((Number(dateStr.slice(5, 7)) - 1) / 3) + 1;
+}
+
 export async function getRevenueSummaryPeriods(db: Db, business_id: string) {
   const today = getTodayLocalDate();
   const weekStart = startOfWeek(today);
   const monthStart = today.slice(0, 7) + "-01";
+  const quarterStart = startOfQuarter(today);
   const yearStart = today.slice(0, 4) + "-01-01";
 
   async function sumRange(dateFrom: string, dateTo: string) {
@@ -455,14 +470,62 @@ export async function getRevenueSummaryPeriods(db: Db, business_id: string) {
     [business_id]
   )) as { d: string | null };
 
-  const [day, week, month, year] = await Promise.all([
+  const [day, week, month, quarter, year] = await Promise.all([
     sumRange(today, today),
     sumRange(weekStart, today),
     sumRange(monthStart, today),
+    sumRange(quarterStart, today),
     sumRange(yearStart, today),
   ]);
 
-  return { date: today, day, week, month, year, data_since: earliest.d };
+  return {
+    date: today,
+    day,
+    week,
+    month,
+    quarter: { ...quarter, number: quarterNumber(today) },
+    year,
+    data_since: earliest.d,
+  };
+}
+
+/** Omzet dipecah per channel (Shopee/TikTok Shop/Lazada/WhatsApp/dst) untuk
+ * 1 periode -- dipakai kartu "Omzet per Channel" di Overview (8 Sept 2026,
+ * hasil diskusi soal client multi-channel). Diurutkan dari omzet terbesar.
+ * `total` = jumlah semua channel, disediakan langsung (bukan cuma dihitung
+ * di frontend) supaya tidak ada 2 sumber angka yang bisa beda kalau salah
+ * satu berubah rumus pembulatannya. */
+export async function getRevenueByChannel(db: Db, business_id: string, dateFrom: string, dateTo: string) {
+  const rows = (await db.all(
+    `SELECT channel, COUNT(*)::int as orders, COALESCE(SUM(total_amount), 0) as revenue
+       FROM transactions
+      WHERE business_id = $1 AND status = 'ACTIVE' AND deleted_at IS NULL
+        AND transaction_date BETWEEN $2 AND $3
+      GROUP BY channel
+      ORDER BY revenue DESC`,
+    [business_id, dateFrom, dateTo]
+  )) as { channel: string; orders: number; revenue: number }[];
+
+  const channels = rows.map((r) => ({ channel: r.channel, orders: r.orders, revenue: round2(r.revenue) }));
+  const total = round2(channels.reduce((sum, c) => sum + c.revenue, 0));
+
+  return { channels, total };
+}
+
+/** Batas tanggal "to date" untuk 1 periode (hari ini s/d hari ini, minggu
+ * berjalan s/d hari ini, dst) -- logic yang sama dipakai getRevenueSummaryPeriods
+ * di atas, diekspos terpisah supaya endpoint lain (revenue-by-channel) bisa
+ * pakai definisi periode yang SAMA PERSIS, bukan menghitung ulang dengan
+ * kemungkinan beda pembulatan/hari mulai minggu. */
+export function getPeriodBounds(
+  period: "day" | "week" | "month" | "quarter" | "year"
+): { dateFrom: string; dateTo: string } {
+  const today = getTodayLocalDate();
+  if (period === "day") return { dateFrom: today, dateTo: today };
+  if (period === "week") return { dateFrom: startOfWeek(today), dateTo: today };
+  if (period === "month") return { dateFrom: today.slice(0, 7) + "-01", dateTo: today };
+  if (period === "quarter") return { dateFrom: startOfQuarter(today), dateTo: today };
+  return { dateFrom: today.slice(0, 4) + "-01-01", dateTo: today };
 }
 
 function startOfWeek(dateStr: string): string {

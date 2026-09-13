@@ -9,6 +9,11 @@
 // perubahan tetap punya alasan tercatat di stock_adjustments (lihat
 // products.ts). Pola UI mengikuti NeedsReviewList.tsx yang sudah ada:
 // plain fetch, state lokal, tanpa library form eksternal.
+//
+// 12 Sept 2026: tambah catatan peringatan permanen di atas halaman --
+// stok di sini MANUAL, tidak otomatis nyambung ke transaksi/penjualan.
+// Tanpa catatan ini, pemilik warung/klien wajar mengira ini inventory
+// real-time, padahal bukan (lihat PRODUCTS_FEATURE_NOTES.md).
 
 import { useEffect, useState } from "react";
 
@@ -75,6 +80,15 @@ export function ProductsList() {
         </button>
       </div>
 
+      <div
+        className="dash-card p-3 text-xs leading-relaxed text-dash-muted"
+        style={{ borderLeft: "3px solid var(--color-dash-accent)" }}
+      >
+        <span className="font-semibold text-dash-text">Catatan:</span> ini pencatatan stok{" "}
+        <span className="font-semibold">manual</span>. Stok di sini tidak otomatis berkurang saat ada penjualan
+        masuk — sesuaikan sendiri lewat tombol &quot;Sesuaikan stok&quot; (misal tiap hitung stok fisik).
+      </div>
+
       {lowStockCount > 0 && (
         <div
           className="dash-card dash-card--action p-3 text-sm text-dash-amber"
@@ -124,6 +138,19 @@ function AddProductForm({ onCreated }: { onCreated: () => void }) {
   const [lowStockThreshold, setLowStockThreshold] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // 12 Sept 2026: pre-fill dari ambang stok default di Settings (kalau
+  // sudah diatur) -- pengguna tetap bisa ubah manual sebelum simpan.
+  useEffect(() => {
+    fetch("/api/settings/notifications")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.default_low_stock_threshold !== null && data?.default_low_stock_threshold !== undefined) {
+          setLowStockThreshold(String(data.default_low_stock_threshold));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   async function submit() {
     setError(null);

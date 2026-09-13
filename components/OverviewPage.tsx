@@ -9,8 +9,7 @@
 //      eksplisit).
 //   2. Butuh Perhatian -- NeedsReviewList/DuplicateFlagList, notifikasi
 //      yang beneran perlu tindakan.
-//   3. Aktivitas Terakhir -- ringkasan histori (upload, review, duplikat).
-//   4. Ringkasan Bisnis -- metrik (Jumlah Transaksi/Barang Terjual/Produk
+//   3. Ringkasan Bisnis -- metrik (Jumlah Transaksi/Barang Terjual/Produk
 //      Aktif -- "Total Pendapatan" DIBUANG dari sini karena sudah
 //      terwakili oleh kartu "Hari" di Omzet per Periode), grafik 14 hari,
 //      transaksi terbaru, data inbox.
@@ -24,14 +23,20 @@
 //   - Log Sistem (duplikat persis dari Aktivitas Terakhir, cuma beda gaya)
 //   - Upload Data widget (sekarang cuma ada di /upload, bukan di sini juga)
 //   - "Metode Pembayaran" placeholder kosong (belum ada datanya sama sekali)
+//
+// 12 Sept 2026: "Aktivitas Terakhir" (RecentActivityFeed) JUGA DIBUANG --
+// begitu Activity Log (/activity) dibuat, section ini jadi duplikat dari
+// 2 arah sekaligus: isinya (needs-review + duplikat) sudah ada persis di
+// "Butuh Perhatian" tepat di atasnya, DAN (upload) sudah ada lengkap di
+// /activity. Diganti 1 link kecil ke /activity, pola sama seperti
+// "Transaksi Terbaru -> Lihat semua" di bawah. RecentActivityFeed.tsx
+// jadi tidak dipakai lagi (boleh dihapus filenya, tidak wajib).
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { NeedsReviewList } from "./NeedsReviewList";
 import { DuplicateFlagList } from "./DuplicateFlagList";
 import { DataInboxList } from "./DataInboxList";
-import { RecentActivityFeed } from "./RecentActivityFeed";
-import { RevenueHero } from "./RevenueHero";
 
 interface DashboardSummary {
   date: string;
@@ -74,25 +79,29 @@ export function OverviewPage() {
 
   return (
     <div className="font-dash flex flex-col gap-5 p-4 sm:p-6">
-      {/* 1. Omzet -- paling atas, efek psikologis (lihat catatan di atas) */}
-      <RevenueHero />
+      {/* 12 Sept 2026: RevenueHero & RevenueByChannel DIBUANG dari sini --
+          itu konten "dashboard" (buat client, sudah ada lengkap di
+          /dashboard), bukan konten monitoring buat Ashar. /ops fokus ke
+          hal yang butuh tindakan/diagnosis, bukan menampilkan omzet lagi. */}
 
-      {/* 2. Butuh perhatian -- notifikasi sebenarnya (ada tombol aksi
+      {/* Butuh perhatian -- notifikasi sebenarnya (ada tombol aksi
           langsung) */}
       <div className="flex flex-col gap-4">
         <NeedsReviewList />
         <DuplicateFlagList />
       </div>
 
-      {/* 3. Aktivitas Terakhir */}
-      <div className="dash-card">
-        <div className="flex items-center justify-between border-b border-dash-border p-4">
-          <p className="text-sm font-semibold text-dash-text">Aktivitas Terakhir</p>
-        </div>
-        <RecentActivityFeed limit={8} />
-      </div>
+      {/* Link tipis ke riwayat lengkap -- gantinya "Aktivitas Terakhir"
+          (lihat catatan 12 Sept 2026 di atas). */}
+      <Link
+        href="/activity"
+        className="dash-card flex items-center justify-between p-4 text-sm font-medium text-dash-text hover:bg-dash-surface-2"
+      >
+        Lihat riwayat aktivitas lengkap (koreksi, stok, upload, duplikat)
+        <span className="text-dash-accent">→</span>
+      </Link>
 
-      {/* 4. Ringkasan Bisnis -- 3 stat disatukan dalam 1 kartu (bukan 3
+      {/* 3. Ringkasan Bisnis -- 3 stat disatukan dalam 1 kartu (bukan 3
           kartu terpisah seperti sebelumnya). Alasan (8 Sept 2026): 3 kartu
           terpisah, masing-masing isinya cuma 1 angka + label pendek, kelihatan
           jadi kotak putih besar dengan banyak ruang kosong -- berantakan,

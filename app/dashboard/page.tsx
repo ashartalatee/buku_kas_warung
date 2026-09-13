@@ -23,12 +23,33 @@ interface TopProduct {
   qty_terjual: number;
 }
 
+interface PeriodStat {
+  revenue: number;
+  orders: number;
+}
+
+interface ChannelStat {
+  channel: string;
+  orders: number;
+  revenue: number;
+}
+
 interface Overview {
   business_name: string;
   today: { date: string; orders: number; revenue: number; aov: number };
   trend_14d: TrendPoint[];
   top_products_14d: TopProduct[];
   week: { periode: string; total_orders: number; total_revenue: number };
+  periods: {
+    date: string;
+    day: PeriodStat;
+    week: PeriodStat;
+    month: PeriodStat;
+    quarter: PeriodStat & { number: number };
+    year: PeriodStat;
+    data_since: string | null;
+  };
+  channels: { channels: ChannelStat[]; total: number };
   busiest_slot: { day: string; hour_start: string | null; hour_end: string | null } | null;
   generated_at: string;
 }
@@ -178,7 +199,7 @@ function DashboardInner() {
       <div style={{ background: "#142850" }} className="px-6 py-6 text-white">
         <div className="mx-auto flex max-w-md items-start justify-between">
           <div>
-            <p className="text-[11px] tracking-[0.2em] text-slate-400">TALATEE AUTOMATION LAB</p>
+            <p className="text-[11px] tracking-[0.2em] text-slate-400">TALATEE GROUP</p>
             <h1
               style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}
               className="mt-1 text-3xl font-bold leading-tight"
@@ -203,21 +224,31 @@ function DashboardInner() {
       </div>
 
       <div className="mx-auto max-w-md px-4 pt-5">
-        {/* Hari ini */}
-        <SectionLabel>{`HARI INI — ${formatTanggalID(data.today.date)}`}</SectionLabel>
+        {/* Ringkasan Omzet -- 12 Sept 2026: angka BESAR (kumulatif tahun
+            berjalan) ditampilkan dulu, baru breakdown periode kecil di
+            bawahnya. Sebelumnya "Hari Ini" berdiri sendiri di posisi
+            paling mencolok -- kalau kebetulan belum ada transaksi hari
+            itu, kesan pertama buka dashboard jadi terasa kosong padahal
+            bisnisnya sehat. Sekarang angka kecil selalu dikontekstualkan
+            berdampingan dengan angka besar, tidak pernah berdiri sendiri. */}
+        <SectionLabel>RINGKASAN OMZET</SectionLabel>
         <Card accent>
-          <Row label="Jumlah transaksi" value={String(data.today.orders)} />
-          <Row label="Rata-rata belanja (AOV)" value={formatRupiah(data.today.aov)} />
-          <div className="my-2 border-t border-dashed border-[#d8d2bd]" />
-          <Row
-            label="Total Pendapatan"
-            value={formatRupiah(data.today.revenue)}
-            big
-            color="#1f7a4f"
-          />
-          {data.today.orders === 0 && (
+          <p className="text-xs font-medium text-[#6b6354]">{`Total Pendapatan Tahun ${data.periods.date.slice(0, 4)}`}</p>
+          <p style={{ color: "#1f7a4f" }} className="mt-1 text-4xl font-bold leading-tight">
+            {formatRupiah(data.periods.year.revenue)}
+          </p>
+          <p className="mt-1 text-xs text-neutral-400">{data.periods.year.orders} transaksi sepanjang tahun ini</p>
+
+          <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-3 border-t border-dashed pt-4" style={{ borderColor: "#d8d2bd" }}>
+            <MiniPeriod label="Hari Ini" value={data.periods.day.revenue} />
+            <MiniPeriod label="Minggu Ini" value={data.periods.week.revenue} />
+            <MiniPeriod label="Bulan Ini" value={data.periods.month.revenue} />
+            <MiniPeriod label={`Triwulan ${data.periods.quarter.number}`} value={data.periods.quarter.revenue} />
+          </div>
+
+          {data.periods.year.orders === 0 && (
             <p className="mt-3 text-xs italic text-neutral-400">
-              Belum ada transaksi tercatat hari ini — cek lagi nanti.
+              Belum ada transaksi tercatat — cek lagi setelah ada penjualan pertama.
             </p>
           )}
         </Card>
@@ -254,6 +285,36 @@ function DashboardInner() {
           )}
         </Card>
 
+        {/* Omzet per Channel -- 12 Sept 2026 */}
+        <SectionLabel>OMZET PER CHANNEL (BULAN INI)</SectionLabel>
+        <Card padded={false}>
+          {data.channels.channels.length === 0 ? (
+            <p className="p-4 text-xs text-neutral-400">Belum ada transaksi bulan ini.</p>
+          ) : (
+            data.channels.channels.map((c, i) => {
+              const pct = data.channels.total > 0 ? Math.round((c.revenue / data.channels.total) * 100) : 0;
+              return (
+                <div
+                  key={c.channel}
+                  className="px-4 py-3"
+                  style={{ borderBottom: i < data.channels.channels.length - 1 ? "1px solid #ddd0a3" : undefined }}
+                >
+                  <div className="flex items-center justify-between text-sm">
+                    <span>{c.channel}</span>
+                    <span style={{ color: "#142850" }} className="font-bold">
+                      {formatRupiah(c.revenue)}
+                    </span>
+                  </div>
+                  <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full" style={{ background: "#eee2bd" }}>
+                    <div style={{ width: `${pct}%`, background: "#1f7a4f" }} className="h-full rounded-full" />
+                  </div>
+                  <p className="mt-1 text-[10px] text-neutral-400">{pct}% dari total bulan ini</p>
+                </div>
+              );
+            })
+          )}
+        </Card>
+
         {/* Produk terlaris */}
         <SectionLabel>PRODUK TERLARIS (14 HARI)</SectionLabel>
         <Card padded={false}>
@@ -278,14 +339,6 @@ function DashboardInner() {
               </div>
             ))
           )}
-        </Card>
-
-        {/* Minggu ini */}
-        <SectionLabel>{`MINGGU INI — ${data.week.periode}`}</SectionLabel>
-        <Card>
-          <Row label="Transaksi" value={String(data.week.total_orders)} />
-          <div className="my-2 border-t border-[#2b2a25]" />
-          <Row label="Total Pendapatan" value={formatRupiah(data.week.total_revenue)} big color="#1f7a4f" />
         </Card>
 
         {/* Catatan toko */}
@@ -318,7 +371,7 @@ function DashboardInner() {
           <p>{refreshing ? "Memperbarui..." : `Terakhir dimuat: ${loadedAt}`}</p>
           <p>Talatee Automation Lab — Bizintelli Engine</p>
         </div>
-        <div className="mt-4 flex justify-center">
+        <div className="mt-4 flex justify-center gap-2">
           <button
             onClick={() => load()}
             style={{ background: "#142850" }}
@@ -326,6 +379,17 @@ function DashboardInner() {
           >
             Muat ulang
           </button>
+          {/* 12 Sept 2026: link balik ke Panel Sederhana (upload data),
+              supaya client tidak perlu ingat alamat terpisah -- dari WA
+              bisa buka Dashboard, dari Dashboard bisa buka Upload,
+              keduanya saling terhubung. */}
+          <a
+            href="/"
+            style={{ borderColor: "#142850", color: "#142850" }}
+            className="rounded-md border px-5 py-2 text-xs font-semibold transition hover:bg-[#142850] hover:text-white active:scale-95"
+          >
+            Upload Data
+          </a>
         </div>
       </div>
     </div>
@@ -365,6 +429,17 @@ function Card({
       className={`rounded-lg border ${padded ? "p-4" : ""}`}
     >
       {children}
+    </div>
+  );
+}
+
+function MiniPeriod({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <p className="text-[10px] text-neutral-400">{label}</p>
+      <p style={{ color: "#142850" }} className="text-sm font-bold">
+        {value === 0 ? "Rp0" : formatRupiah(value)}
+      </p>
     </div>
   );
 }

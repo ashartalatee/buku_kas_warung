@@ -93,3 +93,9 @@ export function verifyLocalApiKey(headerValue: string | null): boolean {
   const b = Buffer.from(expected);
   return a.length === b.length && timingSafeEqual(a, b);
 }
+
+/** Session id khusus buat Platform Admin (Ashar sendiri) -- BUKAN
+ * business_id asli mana pun. proxy.ts memakai ini untuk membatasi
+ * /ops hanya bisa diakses session ini, bukan session business owner
+ * (client) biasa walau sudah login. */
+export const PLATFORM_ADMIN_SESSION_ID = "__platform_admin__";

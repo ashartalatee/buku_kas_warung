@@ -63,8 +63,8 @@ export function RevenueHero() {
       className="dash-card overflow-hidden p-5 sm:p-6"
       style={{ background: "linear-gradient(135deg, var(--color-dash-accent-soft), var(--color-dash-surface))" }}
     >
-      <p className="mb-4 text-xs font-semibold uppercase tracking-wider text-dash-muted">💰 Omzet per Periode</p>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <p className="mb-4 text-xs font-semibold uppercase tracking-wider text-dash-muted">Omzet per Periode</p>
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <HeroStat label="Hari" value={data?.day.revenue} />
         <HeroStat
           label="Minggu"
@@ -88,12 +88,12 @@ export function RevenueHero() {
 
 function HeroStat({ label, value, caption }: { label: string; value?: number; caption?: string }) {
   return (
-    <div>
+    <div className="min-w-0">
       <p className="text-xs font-medium text-dash-muted">{label}</p>
-      <p className="mt-1 text-xl font-extrabold tracking-tight text-dash-text sm:text-3xl">
+      <p className="mt-1 truncate text-lg font-extrabold tracking-tight text-dash-text sm:text-xl md:text-3xl">
         {value !== undefined ? formatRupiah(value) : "..."}
       </p>
-      {caption && <p className="mt-0.5 text-[10px] text-dash-muted">{caption}</p>}
+      {caption && <p className="mt-0.5 truncate text-[10px] text-dash-muted">{caption}</p>}
     </div>
   );
 }

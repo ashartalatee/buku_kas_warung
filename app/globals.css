@@ -41,22 +41,27 @@
   --color-dash-blue: #2563eb;
   --color-dash-purple: #9333ea;
 
-  /* Aksen merek (dipakai untuk item aktif di sidebar, tombol utama seperti
-     "Upload CSV/Excel", dan logo) -- indigo/biru, beda dari --color-dash-blue
-     (info) supaya "ini brand" vs "ini status info" tetap bisa dibedakan
-     kalau nanti dipakai berdampingan. */
-  --color-dash-accent: #3452eb;
-  --color-dash-accent-soft: #eef1ff;
+  /* Aksen merek -- emas/perunggu (redesign 12 Sept 2026), senada dengan
+     identitas "buku besar" (ledger) yang sudah dipakai di tema terang,
+     BUKAN indigo generik kit SaaS. Dipakai untuk item aktif di sidebar,
+     tombol utama seperti "Upload CSV/Excel", dan logo. Beda dari
+     --color-dash-blue (info) supaya "ini brand" vs "ini status info"
+     tetap bisa dibedakan kalau nanti dipakai berdampingan. */
+  --color-dash-accent: #b8863d;
+  --color-dash-accent-soft: #f7efe0;
 
-  /* Token KHUSUS sidebar -- sengaja tetap gelap walau konten sudah terang,
-     supaya sidebar tetap jadi elemen navigasi yang menonjol (sesuai mockup). */
-  --color-dash-sidebar-bg: #0b1120;
-  --color-dash-sidebar-border: #1e2536;
-  --color-dash-sidebar-hover: #171e30;
-  --color-dash-sidebar-text: #e7e9f3;
-  --color-dash-sidebar-muted: #8991a8;
-  --color-dash-sidebar-section: #5b6377;
-  --color-dash-sidebar-active-bg: #3452eb;
+  /* Token KHUSUS sidebar -- navy brand yang sama dengan --color-navy di
+     atas (redesign 12 Sept 2026; sebelumnya near-black terpisah), supaya
+     sidebar & identitas "buku kas" terasa satu kesatuan, bukan 2 tema
+     yang bentrok. Tetap gelap by design (kontras dengan konten terang). */
+  --color-dash-sidebar-bg: #142850;
+  --color-dash-sidebar-border: #24427e;
+  --color-dash-sidebar-hover: #1c3a6b;
+  --color-dash-sidebar-text: #f4f1ea;
+  --color-dash-sidebar-muted: #9fb0d1;
+  --color-dash-sidebar-section: #7387b8;
+  --color-dash-sidebar-active-bg: #1c3a6b;
+  --color-dash-sidebar-active-accent: #d4af6a;
 
   --font-sans: var(--font-plex-mono);
   --font-mono: var(--font-plex-mono);
@@ -97,5 +102,3 @@ body {
 .dash-card--action {
   border-left: 3px solid var(--accent, var(--color-dash-amber));
 }
-
-

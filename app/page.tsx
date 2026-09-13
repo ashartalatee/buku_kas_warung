@@ -1,10 +1,5 @@
-import { OverviewPage } from "@/components/OverviewPage";
-import { AdminShell } from "@/components/AdminShell";
+import { SimplePanel } from "@/components/SimplePanel";
 
 export default function Page() {
-  return (
-    <AdminShell>
-      <OverviewPage />
-    </AdminShell>
-  );
+  return <SimplePanel />;
 }
