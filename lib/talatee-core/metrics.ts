@@ -478,11 +478,38 @@ export async function getRevenueSummaryPeriods(db: Db, business_id: string) {
     sumRange(yearStart, today),
   ]);
 
+  // Perbandingan periode -- "Minggu Ini" dibandingkan ke minggu lalu DI
+  // RENTANG HARI YANG SAMA (kalau sekarang baru hari ke-5 minggu ini,
+  // dibandingkan ke hari ke-1 s/d ke-5 minggu lalu, BUKAN seminggu penuh)
+  // supaya perbandingannya adil -- bukan cuma "angka besar vs kecil"
+  // karena minggu lalu memang sudah selesai sementara minggu ini belum.
+  // Sama logikanya untuk "Bulan Ini".
+  const daysIntoWeek = Math.round(
+    (new Date(today + "T00:00:00Z").getTime() - new Date(weekStart + "T00:00:00Z").getTime()) / 86400000
+  ) + 1;
+  const prevWeekStart = shiftDate(weekStart, -7);
+  const prevWeekEnd = shiftDate(prevWeekStart, daysIntoWeek - 1);
+  const weekPrevious = await sumRange(prevWeekStart, prevWeekEnd);
+
+  const dayOfMonth = Number(today.slice(8, 10));
+  const [prevMonthYear, prevMonthNum] = (() => {
+    const y = Number(today.slice(0, 4));
+    const m = Number(today.slice(5, 7));
+    return m === 1 ? [y - 1, 12] : [y, m - 1];
+  })();
+  const daysInPrevMonth = new Date(Date.UTC(prevMonthYear, prevMonthNum, 0)).getUTCDate();
+  const cappedDay = Math.min(dayOfMonth, daysInPrevMonth);
+  const prevMonthStart = `${prevMonthYear}-${String(prevMonthNum).padStart(2, "0")}-01`;
+  const prevMonthEnd = `${prevMonthYear}-${String(prevMonthNum).padStart(2, "0")}-${String(cappedDay).padStart(2, "0")}`;
+  const monthPrevious = await sumRange(prevMonthStart, prevMonthEnd);
+
   return {
     date: today,
     day,
     week,
+    week_previous: weekPrevious,
     month,
+    month_previous: monthPrevious,
     quarter: { ...quarter, number: quarterNumber(today) },
     year,
     data_since: earliest.d,

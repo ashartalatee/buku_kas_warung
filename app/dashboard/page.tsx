@@ -44,7 +44,9 @@ interface Overview {
     date: string;
     day: PeriodStat;
     week: PeriodStat;
+    week_previous: PeriodStat;
     month: PeriodStat;
+    month_previous: PeriodStat;
     quarter: PeriodStat & { number: number };
     year: PeriodStat;
     data_since: string | null;
@@ -199,7 +201,7 @@ function DashboardInner() {
       <div style={{ background: "#142850" }} className="px-6 py-6 text-white">
         <div className="mx-auto flex max-w-md items-start justify-between">
           <div>
-            <p className="text-[11px] tracking-[0.2em] text-slate-400">TALATEE GROUP</p>
+            <p className="text-[11px] tracking-[0.2em] text-slate-400">TALATEE AUTOMATION LAB</p>
             <h1
               style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}
               className="mt-1 text-3xl font-bold leading-tight"
@@ -241,8 +243,18 @@ function DashboardInner() {
 
           <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-3 border-t border-dashed pt-4" style={{ borderColor: "#d8d2bd" }}>
             <MiniPeriod label="Hari Ini" value={data.periods.day.revenue} />
-            <MiniPeriod label="Minggu Ini" value={data.periods.week.revenue} />
-            <MiniPeriod label="Bulan Ini" value={data.periods.month.revenue} />
+            <MiniPeriod
+              label="Minggu Ini"
+              value={data.periods.week.revenue}
+              previous={data.periods.week_previous.revenue}
+              previousLabel="minggu lalu"
+            />
+            <MiniPeriod
+              label="Bulan Ini"
+              value={data.periods.month.revenue}
+              previous={data.periods.month_previous.revenue}
+              previousLabel="bulan lalu"
+            />
             <MiniPeriod label={`Triwulan ${data.periods.quarter.number}`} value={data.periods.quarter.revenue} />
           </div>
 
@@ -433,13 +445,35 @@ function Card({
   );
 }
 
-function MiniPeriod({ label, value }: { label: string; value: number }) {
+function MiniPeriod({
+  label,
+  value,
+  previous,
+  previousLabel,
+}: {
+  label: string;
+  value: number;
+  previous?: number;
+  previousLabel?: string;
+}) {
+  // Perbandingan HANYA ditampilkan kalau ada data periode sebelumnya buat
+  // dibandingkan (previous > 0) -- kalau previous 0, persentase perubahan
+  // jadi tidak berarti (bisa "tak terhingga%"), jadi sengaja disembunyikan
+  // daripada menampilkan angka yang menyesatkan.
+  const pct = previous && previous > 0 ? Math.round(((value - previous) / previous) * 100) : null;
+
   return (
     <div>
       <p className="text-[10px] text-neutral-400">{label}</p>
       <p style={{ color: "#142850" }} className="text-sm font-bold">
         {value === 0 ? "Rp0" : formatRupiah(value)}
       </p>
+      {pct !== null && (
+        <p className="text-[10px] font-medium" style={{ color: pct >= 0 ? "#1f6d47" : "#a13d3d" }}>
+          {pct >= 0 ? "↑" : "↓"} {Math.abs(pct)}%{" "}
+          <span className="font-normal text-neutral-400">vs {previousLabel}</span>
+        </p>
+      )}
     </div>
   );
 }

@@ -96,9 +96,9 @@ export function DuplicateFlagList() {
   const visible = expanded ? flags : flags.slice(0, 5);
 
   return (
-    <div className="dash-card dash-card--action font-dash" style={{ "--accent": "var(--color-dash-red)" } as React.CSSProperties}>
+    <div className="dash-card dash-card--action" style={{ "--accent": "var(--color-dash-red)" } as React.CSSProperties}>
       <p className="border-b border-dash-border p-4 text-sm font-medium text-dash-red">
-        🔎 {flags.length} kemungkinan duplikat ditemukan
+        {flags.length} kemungkinan duplikat ditemukan
       </p>
 
       <div>

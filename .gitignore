@@ -47,4 +47,4 @@ next-env.d.ts
 *.db
 
 # Catatan setup berisi kredensial asli - JANGAN commit
-Setup_waha_n8n.md
+Setup_waha_n8n.md*:Zone.Identifier

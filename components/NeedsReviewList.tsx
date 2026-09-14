@@ -70,9 +70,9 @@ export function NeedsReviewList() {
   const visible = expanded ? items : items.slice(0, 5);
 
   return (
-    <div className="dash-card dash-card--action font-dash" style={{ "--accent": "var(--color-dash-amber)" } as React.CSSProperties}>
+    <div className="dash-card dash-card--action" style={{ "--accent": "var(--color-dash-amber)" } as React.CSSProperties}>
       <p className="border-b border-dash-border p-4 text-sm font-medium text-dash-amber">
-        ⚠️ {items.length} transaksi perlu diperiksa
+        {items.length} transaksi perlu diperiksa
       </p>
 
       <div>

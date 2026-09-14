@@ -2,17 +2,18 @@
 
 // Copy to: components/SimplePanel.tsx
 //
-// Panel client (12 Sept 2026) -- SENGAJA cuma 1 layar, 1 tujuan: upload
-// data + buka dashboard. TIDAK ada sidebar/menu segudang seperti Dashboard
-// Admin (yang sekarang pindah ke /ops, dipakai Ashar sendiri buat kelola
-// & diagnosis, bukan buat client). Kalau nanti ada kebutuhan client baru
-// yang nyata, tambah di sini secukupnya -- jangan tergoda menambah menu
-// "biar keliatan lengkap" tanpa kebutuhan nyata (lihat diskusi 12 Sept
-// soal project ini sempat "terlalu over").
+// v2 (12 Sept 2026): disatukan dengan identitas "buku besar" yang sama
+// persis dengan /dashboard (navy header + eyebrow label, krem, font mono
+// bawaan body) -- sebelumnya panel ini pakai tema "dash" generik (abu
+// terang, font Inter), jadi terasa seperti aplikasi berbeda padahal ini
+// 1 alur yang sama buat client (WA -> Dashboard -> Upload -> balik lagi).
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { UploadCsvForm } from "./UploadCsvForm";
+import { TransactionCalendar } from "./TransactionCalendar";
+import { NeedsReviewList } from "./NeedsReviewList";
+import { DuplicateFlagList } from "./DuplicateFlagList";
 
 export function SimplePanel() {
   const router = useRouter();
@@ -34,70 +35,75 @@ export function SimplePanel() {
   }
 
   return (
-    <div className="font-dash flex min-h-dvh flex-col" style={{ background: "var(--color-dash-bg)" }}>
-      <header
-        className="flex items-center justify-between border-b px-5 py-4"
-        style={{ borderColor: "var(--color-dash-border)" }}
-      >
-        <div className="flex items-center gap-2.5">
-          <span
-            className="flex h-8 w-8 items-center justify-center rounded-md"
-            style={{ background: "var(--color-navy)" }}
-          >
-            <span className="text-xs font-bold" style={{ color: "var(--color-dash-accent)" }}>
-              T
-            </span>
-          </span>
+    <div className="flex min-h-dvh flex-col bg-cream">
+      <header style={{ background: "#142850" }} className="px-5 py-6 text-paper">
+        <div className="mx-auto flex max-w-md items-center justify-between">
           <div>
-            <p className="text-sm font-semibold leading-tight text-dash-text">Buku Kas Warung</p>
-            <p className="text-[11px] leading-tight text-dash-muted">Talatee</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-white/60">
+              Talatee Automation Lab
+            </p>
+            <h1 className="mt-0.5 text-xl font-bold">Buku Kas Warung</h1>
           </div>
+          <button
+            onClick={logout}
+            disabled={loggingOut}
+            className="rounded border border-white/25 px-3 py-1.5 text-xs font-medium text-white/90 transition hover:bg-white/10 active:scale-95"
+          >
+            {loggingOut ? "Keluar..." : "Keluar"}
+          </button>
         </div>
-        <button
-          onClick={logout}
-          disabled={loggingOut}
-          className="text-xs font-medium text-dash-muted hover:text-dash-text"
-        >
-          {loggingOut ? "Keluar..." : "Keluar"}
-        </button>
       </header>
 
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-4 p-5">
         <UploadCsvForm />
+
+        {/* 12 Sept 2026: data yang ditandai bermasalah otomatis saat
+            upload (butuh review / kemungkinan duplikat) -- perbaikannya
+            paling pas dilakukan client sendiri (yang paling tahu apakah
+            itu memang salah atau bukan), bukan cuma dimonitor dari luar. */}
+        <NeedsReviewList />
+        <DuplicateFlagList />
+
+        <TransactionCalendar />
 
         {dashboardUrl && (
           <a
             href={dashboardUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="dash-card flex items-center justify-between p-4 text-sm font-medium text-dash-text hover:bg-dash-surface-2"
+            className="ledger-card flex items-center justify-between p-4 text-sm font-medium text-ink transition hover:bg-[#f1ecd9] active:scale-[0.99]"
           >
             Lihat Dashboard
-            <span style={{ color: "var(--color-dash-accent)" }}>→</span>
+            <span style={{ color: "#b8863d" }}>→</span>
           </a>
         )}
 
-        <div className="dash-card flex items-center gap-3 p-4">
+        <div className="ledger-card flex items-center gap-3 p-4">
           <span
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
-            style={{ background: "var(--color-dash-surface-2)", color: "var(--color-dash-muted)" }}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md"
+            style={{ background: "#eee2bd", color: "#8a6a2f" }}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <circle cx="8" cy="12" r="3" />
               <circle cx="16" cy="12" r="3" />
               <path d="M11 12h2" />
             </svg>
           </span>
           <div className="flex-1">
-            <p className="text-sm font-medium text-dash-text">Hubungkan API Kasir/POS</p>
-            <p className="text-xs text-dash-muted">Segera hadir.</p>
+            <p className="text-sm font-medium text-ink">Hubungkan API Kasir/POS</p>
+            <p className="text-xs text-muted">Segera hadir.</p>
           </div>
           <span
-            style={{
-              background: "var(--color-dash-surface-2)",
-              color: "var(--color-dash-muted)",
-              borderColor: "var(--color-dash-border)",
-            }}
+            style={{ background: "#eee2bd", color: "#8a6a2f", borderColor: "#ddd0a3" }}
             className="shrink-0 rounded border px-1.5 py-0.5 text-[8.5px] font-semibold tracking-wider"
           >
             SEGERA
@@ -105,6 +111,9 @@ export function SimplePanel() {
         </div>
       </main>
 
+      <footer className="pb-6 pt-2 text-center">
+        <p className="text-[9.5px] tracking-widest text-muted">TALATEE AUTOMATION LAB</p>
+      </footer>
     </div>
   );
 }
