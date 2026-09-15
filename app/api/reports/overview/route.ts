@@ -44,8 +44,15 @@ export async function GET() {
   const busiest = await getBusiestSlot(db, user.business_id, 14);
   const periods = await getRevenueSummaryPeriods(db, user.business_id);
 
+  // TEMPORARY (15 Sept 2026, Claude): getRevenueByChannel query kolom
+  // "channel" yang belum ada di tabel transactions -- fitur ini
+  // setengah jadi (form sudah kirim channel_mode, tapi belum tersambung
+  // sampai ke database). Dikosongkan sementara supaya dashboard tidak
+  // error. Lihat sesi Claude 15 Sept 2026 untuk detail lengkap yang
+  // perlu disambungkan kembali.
   const monthBounds = getPeriodBounds("month");
-  const channels = await getRevenueByChannel(db, user.business_id, monthBounds.dateFrom, monthBounds.dateTo);
+  const channels = { channels: [], total: 0 };
+  // const channels = await getRevenueByChannel(db, user.business_id, monthBounds.dateFrom, monthBounds.dateTo);
 
   return NextResponse.json({
     business_name: businessRow?.business_name ?? "Warung",
