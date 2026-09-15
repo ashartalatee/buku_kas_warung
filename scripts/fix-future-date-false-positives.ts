@@ -68,7 +68,7 @@ async function main() {
 
   for (const row of candidates) {
     const notes = (row.validation_notes ?? "").trim();
-    const parts = notes.split(";").map((s) => s.trim());
+    const parts = notes.split(";").map((s: string) => s.trim());
     const isSoleFutureDateError = parts.length === 1 && FUTURE_DATE_PATTERN.test(parts[0]);
 
     if (!isSoleFutureDateError) {

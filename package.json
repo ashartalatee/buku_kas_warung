@@ -13,9 +13,9 @@
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",
-    "pg": "^8.13.1",
     "csv-parse": "^7.0.2",
     "next": "16.3.2",
+    "pg": "^8.13.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "xlsx": "^0.18.5"
@@ -24,6 +24,7 @@
     "@tailwindcss/postcss": "^4",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/xlsx": "^0.0.35",

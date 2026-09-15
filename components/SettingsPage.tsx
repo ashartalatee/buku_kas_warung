@@ -9,6 +9,7 @@
 // Sisanya (Transaksi, Automation, Integrasi, Data & Backup) masih SEGERA.
 
 import { useEffect, useState } from "react";
+import type { JSX } from "react";
 
 type CardStatus = "ready" | "soon";
 
