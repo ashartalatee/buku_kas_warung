@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS businesses (
     business_id     TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     business_name   TEXT NOT NULL,
     business_type   TEXT NOT NULL CHECK (business_type IN ('warung', 'laundry', 'bengkel')),
+    password_hash   TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
