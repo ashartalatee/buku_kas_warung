@@ -15,8 +15,15 @@ export function sha256(content: string | Buffer): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
-/** Proper CSV parsing via csv-parse: handles quoted fields, embedded
- * commas, CRLF/LF, and BOM. First row = headers. */
+export const CHANNEL_OPTIONS = ["Shopee", "TikTok Shop", "Lazada", "WhatsApp", "Lainnya"];
+export const MIXED_CHANNEL_VALUE = "MIXED_FROM_FILE";
+
+function resolveChannel(channelMode: string, row: RawCsvRow | undefined): string {
+  if (channelMode !== MIXED_CHANNEL_VALUE) return channelMode;
+  const raw = String(row?.channel ?? "").trim();
+  return CHANNEL_OPTIONS.includes(raw) ? raw : "Lainnya";
+}
+
 function parseCsv(content: string): { headers: string[]; rows: RawCsvRow[] } {
   const records: Record<string, string>[] = parse(content, {
     columns: (header: string[]) => header.map((h) => h.trim()),
@@ -28,10 +35,6 @@ function parseCsv(content: string): { headers: string[]; rows: RawCsvRow[] } {
   return { headers, rows: records as RawCsvRow[] };
 }
 
-/** Excel parsing via SheetJS: reads the first sheet, first row = headers.
- * Numeric cells (qty, harga_satuan, subtotal) come back as JS numbers from
- * SheetJS — normalized to strings here so downstream validation code
- * (written for CSV's all-string rows) works unchanged for both formats. */
 function parseExcel(buffer: Buffer): { headers: string[]; rows: RawCsvRow[] } {
   const workbook = XLSX.read(buffer, { type: "buffer", cellDates: false });
   const firstSheetName = workbook.SheetNames[0];
@@ -57,17 +60,14 @@ function parseExcel(buffer: Buffer): { headers: string[]; rows: RawCsvRow[] } {
   return { headers, rows };
 }
 
-/** Shared pipeline for both CSV and Excel: structural check → per-group
- * extraction/validation → duplicate check → insert. This is the same
- * flow documented in docs/flows/01_csv_ingestion_flow.md, now reused for
- * any tabular source rather than being CSV-specific. */
 async function ingestParsedRows(
   db: Db,
   business_id: string,
   source_id: string,
   headers: string[],
   rows: RawCsvRow[],
-  uploaded_by: string
+  uploaded_by: string,
+  channelMode: string
 ): Promise<IngestSummary> {
   const headerCheck = checkHeaders(headers);
   if (!headerCheck.ok) {
@@ -83,7 +83,6 @@ async function ingestParsedRows(
     source_id,
   ]);
 
-  // --- Steps 3-6: group rows into transactions, then extract/validate each ---
   const groups = groupRowsIntoTransactions(rows);
 
   let active_count = 0;
@@ -94,18 +93,17 @@ async function ingestParsedRows(
   const INSERT_TXN_SQL = `INSERT INTO transactions
        (row_id, transaction_id, version, business_id, source_id, external_reference,
         transaction_date, transaction_time, total_amount, line_item_count, status,
-        validation_notes, created_at, created_by)
-     VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), $12)`;
+        validation_notes, channel, created_at, created_by)
+     VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13)`;
   const INSERT_LINE_SQL = `INSERT INTO transaction_lines
        (line_id, transaction_row_id, product_or_service, category, quantity, unit_price, subtotal)
      VALUES ($1, $2, $3, $4, $5, $6, $7)`;
 
   for (const group of groups) {
+    const channel = resolveChannel(channelMode, group.rows[0]);
     const { extracted, errors: extractErrors } = extractTransaction(group);
 
     if (!extracted) {
-      // Couldn't even extract a coherent transaction (e.g. bad date on every
-      // row of the group) — still saved as NEEDS_REVIEW, never dropped.
       const row_id = randomUUID();
       const txn_id = randomUUID();
       await db.run(INSERT_TXN_SQL, [
@@ -120,6 +118,7 @@ async function ingestParsedRows(
         0,
         "NEEDS_REVIEW",
         extractErrors.join("; "),
+        channel,
         uploaded_by,
       ]);
       needs_review_count++;
@@ -144,6 +143,7 @@ async function ingestParsedRows(
         extracted.lines.length,
         "NEEDS_REVIEW",
         businessCheck.errors.join("; "),
+        channel,
         uploaded_by,
       ]);
       for (const line of extracted.lines) {
@@ -162,8 +162,6 @@ async function ingestParsedRows(
       continue;
     }
 
-    // Passed all validation: becomes ACTIVE. Duplicate check runs but does
-    // NOT block ingestion (per SPEC.md §6 / flows/01).
     await db.run(INSERT_TXN_SQL, [
       row_id,
       transaction_id,
@@ -176,6 +174,7 @@ async function ingestParsedRows(
       extracted.lines.length,
       "ACTIVE",
       null,
+      channel,
       uploaded_by,
     ]);
     for (const line of extracted.lines) {
@@ -222,11 +221,6 @@ async function createSourceRow(
   file_hash: string,
   uploaded_by: string
 ): Promise<string> {
-  // deleted_at IS NULL (7 Sept 2026, fitur Sampah): kalau upload lama
-  // dengan hash yang sama sudah dibuang ke Sampah, file yang sama BOLEH
-  // diupload ulang -- lihat uq_sources_business_file_hash_active (partial
-  // unique index) di schema.sql untuk alasan constraint-nya juga diganti,
-  // bukan cuma cek ini saja.
   const existing = await db.get(
     `SELECT source_id FROM sources WHERE business_id = $1 AND file_hash = $2 AND deleted_at IS NULL`,
     [business_id, file_hash]
@@ -249,12 +243,13 @@ export async function ingestCsv(
   business_id: string,
   filename: string,
   fileContent: string,
-  uploaded_by: string
+  uploaded_by: string,
+  channelMode: string
 ): Promise<IngestSummary> {
   const file_hash = sha256(fileContent);
   const source_id = await createSourceRow(db, business_id, "csv_upload", filename, file_hash, uploaded_by);
   const { headers, rows } = parseCsv(fileContent);
-  return ingestParsedRows(db, business_id, source_id, headers, rows, uploaded_by);
+  return ingestParsedRows(db, business_id, source_id, headers, rows, uploaded_by, channelMode);
 }
 
 export async function ingestExcel(
@@ -262,10 +257,11 @@ export async function ingestExcel(
   business_id: string,
   filename: string,
   fileBuffer: Buffer,
-  uploaded_by: string
+  uploaded_by: string,
+  channelMode: string
 ): Promise<IngestSummary> {
   const file_hash = sha256(fileBuffer);
   const source_id = await createSourceRow(db, business_id, "excel_upload", filename, file_hash, uploaded_by);
   const { headers, rows } = parseExcel(fileBuffer);
-  return ingestParsedRows(db, business_id, source_id, headers, rows, uploaded_by);
+  return ingestParsedRows(db, business_id, source_id, headers, rows, uploaded_by, channelMode);
 }

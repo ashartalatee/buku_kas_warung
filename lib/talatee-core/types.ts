@@ -37,6 +37,7 @@ export interface RawCsvRow {
   qty?: string;
   harga_satuan?: string;
   subtotal?: string;
+  channel?: string; // 15 Sept 2026: dibaca hanya kalau channel_mode = MIXED_FROM_FILE, lihat ingest.ts
 }
 
 export interface ParsedLine {

@@ -81,6 +81,16 @@ CREATE TABLE IF NOT EXISTS transactions (
     previous_row_id                            TEXT REFERENCES transactions(row_id),
     validation_notes                             TEXT,
 
+    -- Channel penjualan (15 Sept 2026, hasil diskusi soal client
+    -- multi-channel) -- SUMBER KEBENARAN adalah pilihan dropdown wajib di
+    -- UploadCsvForm.tsx (channel_mode), bukan kolom bebas di file upload,
+    -- supaya tidak rawan typo/lupa diisi. Default 'Lainnya' murni supaya
+    -- ALTER TABLE aman untuk baris lama yang sudah ada sebelum kolom ini
+    -- dibuat -- baris baru SELALU eksplisit diisi lewat ingest.ts.
+    channel                                        TEXT NOT NULL DEFAULT 'Lainnya'
+                                                    CHECK (channel IN
+                                                      ('Shopee', 'TikTok Shop', 'Lazada', 'WhatsApp', 'Lainnya')),
+
     created_at                                     TIMESTAMPTZ NOT NULL DEFAULT now(),
     created_by                                       TEXT NOT NULL,
     resolved_at                                        TIMESTAMPTZ,

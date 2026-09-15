@@ -30,13 +30,13 @@ async function main() {
 
   console.log("2. Ingest CSV sample (ada arithmetic mismatch + duplikat exact)...");
   const csvContent = fs.readFileSync("./scripts/verify-postgres-sample.csv", "utf-8");
-  const summary = await ingestCsv(db, business_id, "test-sample.csv", csvContent, "tester");
+  const summary = await ingestCsv(db, business_id, "test-sample.csv", csvContent, "tester", "WhatsApp");
   console.log("   OK:", summary);
   if (summary.needs_review_count < 1) throw new Error("Harusnya ada minimal 1 NEEDS_REVIEW (arithmetic mismatch)");
 
   console.log("3. Ingest ULANG file yang sama (harus ditolak, exact duplicate file)...");
   try {
-    await ingestCsv(db, business_id, "test-sample.csv", csvContent, "tester");
+    await ingestCsv(db, business_id, "test-sample.csv", csvContent, "tester", "WhatsApp");
     throw new Error("Harusnya throw error untuk duplicate file, tapi tidak!");
   } catch (err) {
     if (err instanceof Error && err.message.includes("sudah pernah diupload")) {
