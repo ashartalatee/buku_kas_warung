@@ -72,7 +72,7 @@
             },
             {
               "name": "X-Api-Key",
-              "value": "REDACTED_API_KEY"
+              "value": "GANTI_DENGAN_KEY_WAHA_BARU"
             }
           ]
         },
@@ -85,7 +85,7 @@
             },
             {
               "name": "chatId",
-              "value": "REDACTED_PHONE_NUMBER"
+              "value": "NOMOR_WA_KAMU_DI_SINI"
             },
             {
               "name": "text",

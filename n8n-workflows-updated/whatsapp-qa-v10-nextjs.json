@@ -18,7 +18,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const nomorDiizinkan = [\n  'REDACTED_PHONE_NUMBER',\n  '6289678438317@c.us',\n  '178322847871231@lid'\n  // tambah nomor/lid lain di sini, pisahkan dengan koma\n];\n\nconst body = $input.first().json.body;\nconst pengirim = body?.payload?.from || '';\nconst hasMedia = body?.payload?.hasMedia || false;\nconst media = body?.payload?.media || null;\n\nconst diizinkan = nomorDiizinkan.includes(pengirim);\n\nreturn [{ json: { diizinkan, pengirim, pesanMasuk: (body?.payload?.body || ''), hasMedia, media } }];"
+        "jsCode": "const nomorDiizinkan = [\n  'NOMOR_WA_KAMU_DI_SINI',\n  '6289678438317@c.us',\n  '178322847871231@lid'\n  // tambah nomor/lid lain di sini, pisahkan dengan koma\n];\n\nconst body = $input.first().json.body;\nconst pengirim = body?.payload?.from || '';\nconst hasMedia = body?.payload?.hasMedia || false;\nconst media = body?.payload?.media || null;\n\nconst diizinkan = nomorDiizinkan.includes(pengirim);\n\nreturn [{ json: { diizinkan, pengirim, pesanMasuk: (body?.payload?.body || ''), hasMedia, media } }];"
       },
       "name": "Cek Nomor Diizinkan",
       "type": "n8n-nodes-base.code",
@@ -154,7 +154,7 @@
             },
             {
               "name": "X-Api-Key",
-              "value": "REDACTED_API_KEY"
+              "value": "GANTI_DENGAN_KEY_WAHA_BARU"
             }
           ]
         },
@@ -255,7 +255,7 @@
             },
             {
               "name": "X-Api-Key",
-              "value": "REDACTED_API_KEY"
+              "value": "GANTI_DENGAN_KEY_WAHA_BARU"
             }
           ]
         },
