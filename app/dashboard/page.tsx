@@ -396,7 +396,7 @@ function DashboardInner() {
               bisa buka Dashboard, dari Dashboard bisa buka Upload,
               keduanya saling terhubung. */}
           <a
-            href="/"
+            href="/upload"
             style={{ borderColor: "#142850", color: "#142850" }}
             className="rounded-md border px-5 py-2 text-xs font-semibold transition hover:bg-[#142850] hover:text-white active:scale-95"
           >
