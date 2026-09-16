@@ -45,7 +45,7 @@ const STATUS_STYLE: Record<Txn["status"], string> = {
   VOID: "text-dash-muted line-through",
 };
 
-export function TransactionsList({ date }: { date?: string }) {
+export function TransactionsList({ date, source_id }: { date?: string; source_id?: string }) {
   const [rows, setRows] = useState<Txn[]>([]);
   const [loading, setLoading] = useState(true);
   const [correctingId, setCorrectingId] = useState<string | null>(null);
@@ -59,7 +59,10 @@ export function TransactionsList({ date }: { date?: string }) {
 
   async function load() {
     setLoading(true);
-    const qs = date ? `?date=${date}` : "";
+    const params = new URLSearchParams();
+    if (date) params.set("date", date);
+    if (source_id) params.set("source_id", source_id);
+    const qs = params.toString() ? `?${params.toString()}` : "";
     const res = await fetch(`/api/transactions${qs}`);
     setRows(await res.json());
     setLoading(false);
@@ -67,7 +70,7 @@ export function TransactionsList({ date }: { date?: string }) {
 
   useEffect(() => {
     load();
-  }, [date]);
+  }, [date, source_id]);
 
   async function submitCorrection(row_id: string) {
     setError(null);

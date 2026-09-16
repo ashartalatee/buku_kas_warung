@@ -12,9 +12,16 @@
 // bukan permanen (lihat lifecycle.ts softDeleteSource). Berguna khusus
 // untuk data latihan/testing: upload file salah -> hapus 1 batch,
 // daripada hapus satu-satu di halaman Transaksi.
+//
+// 15 Sept 2026: tambah "Lihat Detail" -- expand inline (bukan halaman
+// terpisah) menampilkan semua transaksi dari 1 file ini lewat
+// TransactionsList yang sudah ada, terfilter source_id. Tiap baris bisa
+// diedit (Koreksi) dan riwayatnya otomatis tercatat, sama seperti di
+// halaman Transaksi biasa -- tidak ada logic baru, cuma disambungkan.
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { TransactionsList } from "./TransactionsList";
 
 interface SourceRow {
   source_id: string;
@@ -33,12 +40,27 @@ const STATUS_ICON: Record<SourceRow["status"], string> = {
   FAILED: "❌",
 };
 
+function formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Jakarta",
+  }).format(d);
+}
+
 export function DataInboxList() {
   const [rows, setRows] = useState<SourceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [detailFor, setDetailFor] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   async function load() {
     const res = await fetch("/api/sources");
@@ -61,6 +83,7 @@ export function DataInboxList() {
       return;
     }
     setDeletingId(null);
+    if (detailFor === source_id) setDetailFor(null);
     load();
   }
 
@@ -70,62 +93,89 @@ export function DataInboxList() {
   return (
     <div className="dash-card font-dash">
       <p className="border-b border-dash-border p-4 text-sm font-medium text-dash-text">Data Inbox</p>
-      {rows.map((row) => (
-        <div key={row.source_id} className="border-b border-dash-border p-3 last:border-0">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="min-w-0 flex-1">
-              <p className="text-sm break-all text-dash-text">
-                {STATUS_ICON[row.status]} {row.original_filename}
-              </p>
-              <p className="mt-1 text-xs text-dash-muted">
-                {row.uploaded_at}
-                {row.status === "COMPLETED" &&
-                  ` · ${row.processed_row_count}/${row.row_count} baris diproses`}
-              </p>
-              {row.status === "FAILED" && (
-                <p className="mt-1 text-xs text-dash-red">{row.failure_reason}</p>
-              )}
+      {(expanded ? rows : rows.slice(0, 1)).map((row) => (
+        <div key={row.source_id} className="border-b border-dash-border last:border-0">
+          <div className="p-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm break-all text-dash-text">
+                  {STATUS_ICON[row.status]} {row.original_filename}
+                </p>
+                <p className="mt-1 text-xs text-dash-muted">
+                  Diupload {formatDateTime(row.uploaded_at)}
+                  {row.status === "COMPLETED" &&
+                    ` · ${row.processed_row_count}/${row.row_count} baris diproses`}
+                </p>
+                {row.status === "FAILED" && (
+                  <p className="mt-1 text-xs text-dash-red">{row.failure_reason}</p>
+                )}
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                {row.status === "COMPLETED" && row.processed_row_count > 0 && (
+                  <button
+                    onClick={() => setDetailFor(detailFor === row.source_id ? null : row.source_id)}
+                    className="rounded border border-dash-border px-3 py-1 text-xs font-medium text-dash-accent hover:bg-dash-surface-2"
+                  >
+                    {detailFor === row.source_id ? "Tutup Detail" : "Lihat Detail"}
+                  </button>
+                )}
+                {row.status === "FAILED" && (
+                  <Link
+                    href="/upload"
+                    className="rounded border border-dash-border px-3 py-1 text-xs font-medium text-dash-text hover:bg-dash-surface-2"
+                  >
+                    Upload ulang
+                  </Link>
+                )}
+                {deletingId !== row.source_id && (
+                  <button
+                    onClick={() => setDeletingId(row.source_id)}
+                    title="Hapus batch ini + semua transaksinya ke Sampah"
+                    className="rounded border border-dash-border px-3 py-1 text-xs font-medium text-dash-red hover:bg-dash-surface-2"
+                  >
+                    🗑️ Hapus
+                  </button>
+                )}
+              </div>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
-              {row.status === "FAILED" && (
-                <Link
-                  href="/upload"
-                  className="rounded border border-dash-border px-3 py-1 text-xs font-medium text-dash-text hover:bg-dash-surface-2"
-                >
-                  Upload ulang
-                </Link>
-              )}
-              {deletingId !== row.source_id && (
+
+            {deletingId === row.source_id && (
+              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-dash-border pt-3">
+                <span className="text-xs text-dash-text">
+                  Hapus batch ini (beserta SEMUA transaksi dari file ini) ke Sampah? Masih bisa dipulihkan.
+                </span>
                 <button
-                  onClick={() => setDeletingId(row.source_id)}
-                  title="Hapus batch ini + semua transaksinya ke Sampah"
-                  className="rounded border border-dash-border px-3 py-1 text-xs font-medium text-dash-red hover:bg-dash-surface-2"
+                  onClick={() => submitDelete(row.source_id)}
+                  disabled={busyId === row.source_id}
+                  className="rounded bg-dash-red px-3 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
                 >
-                  🗑️ Hapus
+                  {busyId === row.source_id ? "Menghapus..." : "Ya, hapus batch ini"}
                 </button>
-              )}
-            </div>
+                <button onClick={() => setDeletingId(null)} className="rounded px-3 py-1 text-xs text-dash-muted">
+                  Batal
+                </button>
+              </div>
+            )}
           </div>
 
-          {deletingId === row.source_id && (
-            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-dash-border pt-3">
-              <span className="text-xs text-dash-text">
-                Hapus batch ini (beserta SEMUA transaksi dari file ini) ke Sampah? Masih bisa dipulihkan.
-              </span>
-              <button
-                onClick={() => submitDelete(row.source_id)}
-                disabled={busyId === row.source_id}
-                className="rounded bg-dash-red px-3 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
-              >
-                {busyId === row.source_id ? "Menghapus..." : "Ya, hapus batch ini"}
-              </button>
-              <button onClick={() => setDeletingId(null)} className="rounded px-3 py-1 text-xs text-dash-muted">
-                Batal
-              </button>
+          {detailFor === row.source_id && (
+            <div className="border-t border-dash-border bg-dash-surface-2 p-3">
+              <p className="mb-2 text-xs font-medium text-dash-muted">
+                Semua transaksi dari file ini -- klik &quot;Koreksi&quot; untuk edit baris yang salah.
+              </p>
+              <TransactionsList source_id={row.source_id} />
             </div>
           )}
         </div>
       ))}
+      {rows.length > 1 && (
+        <button
+          onClick={() => setExpanded((e) => !e)}
+          className="w-full border-t border-dash-border p-2 text-xs font-medium text-dash-accent hover:bg-dash-surface-2"
+        >
+          {expanded ? "Tampilkan lebih sedikit" : `Tampilkan semua (${rows.length})`}
+        </button>
+      )}
       {error && <p className="border-t border-dash-border p-3 text-sm text-dash-red">{error}</p>}
     </div>
   );

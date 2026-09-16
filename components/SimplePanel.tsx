@@ -7,6 +7,10 @@
 // bawaan body) -- sebelumnya panel ini pakai tema "dash" generik (abu
 // terang, font Inter), jadi terasa seperti aplikasi berbeda padahal ini
 // 1 alur yang sama buat client (WA -> Dashboard -> Upload -> balik lagi).
+//
+// 15 Sept 2026: tambah DataInboxList (riwayat file diupload + hapus per
+// batch) dan link ke /trash (Sampah) -- komponennya sudah lama ada tapi
+// belum pernah dipasang di halaman ini.
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -14,6 +18,7 @@ import { UploadCsvForm } from "./UploadCsvForm";
 import { TransactionCalendar } from "./TransactionCalendar";
 import { NeedsReviewList } from "./NeedsReviewList";
 import { DuplicateFlagList } from "./DuplicateFlagList";
+import { DataInboxList } from "./DataInboxList";
 
 export function SimplePanel() {
   const router = useRouter();
@@ -44,29 +49,37 @@ export function SimplePanel() {
             </p>
             <h1 className="mt-0.5 text-xl font-bold">Buku Kas Warung</h1>
           </div>
-          <button
-            onClick={logout}
-            disabled={loggingOut}
-            className="rounded border border-white/25 px-3 py-1.5 text-xs font-medium text-white/90 transition hover:bg-white/10 active:scale-95"
-          >
-            {loggingOut ? "Keluar..." : "Keluar"}
-          </button>
+          <div className="flex items-center gap-2">
+            
+            <a
+              href="/trash"
+              className="rounded border border-white/25 px-3 py-1.5 text-xs font-medium text-white/90 transition hover:bg-white/10 active:scale-95"
+            >
+              🗑️ Sampah
+            </a>
+            <button
+              onClick={logout}
+              disabled={loggingOut}
+              className="rounded border border-white/25 px-3 py-1.5 text-xs font-medium text-white/90 transition hover:bg-white/10 active:scale-95"
+            >
+              {loggingOut ? "Keluar..." : "Keluar"}
+            </button>
+          </div>
         </div>
       </header>
 
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-4 p-5">
         <UploadCsvForm />
 
-        {/* 12 Sept 2026: data yang ditandai bermasalah otomatis saat
-            upload (butuh review / kemungkinan duplikat) -- perbaikannya
-            paling pas dilakukan client sendiri (yang paling tahu apakah
-            itu memang salah atau bukan), bukan cuma dimonitor dari luar. */}
+        <DataInboxList />
+
         <NeedsReviewList />
         <DuplicateFlagList />
 
         <TransactionCalendar />
 
         {dashboardUrl && (
+          
           <a
             href={dashboardUrl}
             target="_blank"

@@ -1,5 +1,7 @@
 // Copy to: app/api/transactions/route.ts
 // GET /api/transactions?date=2026-08-20 (date optional)
+// GET /api/transactions?source_id=xxx (opsional, lihat transaksi 1 file)
+// Keduanya bisa dipakai bareng atau sendiri-sendiri.
 
 import { NextRequest, NextResponse } from "next/server";
 import { listTransactions, hasCorrectionHistory } from "@/lib/talatee-core/metrics";
@@ -8,13 +10,11 @@ import { getCurrentUser } from "@/app/api/_lib/session";
 
 export async function GET(req: NextRequest) {
   const date = req.nextUrl.searchParams.get("date") ?? undefined;
+  const source_id = req.nextUrl.searchParams.get("source_id") ?? undefined;
   const user = getCurrentUser();
   const db = getDb();
 
-  const rows = (await listTransactions(db, user.business_id, date)) as any[];
-  // Catatan porting: hasCorrectionHistory sekarang async (query Postgres),
-  // jadi rows.map(...) biasa akan menghasilkan array of Promise, bukan
-  // array hasil. Wajib Promise.all supaya benar-benar menunggu semuanya.
+  const rows = (await listTransactions(db, user.business_id, date, source_id)) as any[];
   const withHistoryFlag = await Promise.all(
     rows.map(async (r) => ({
       ...r,

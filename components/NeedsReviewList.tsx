@@ -67,7 +67,7 @@ export function NeedsReviewList() {
   if (loading) return <p className="text-sm text-dash-muted">Memuat...</p>;
   if (items.length === 0) return null; // nothing needs review — show nothing, not an empty state banner
 
-  const visible = expanded ? items : items.slice(0, 2);
+  const visible = expanded ? items : items.slice(0, 1);
 
   return (
     <div className="dash-card dash-card--action" style={{ "--accent": "var(--color-dash-amber)" } as React.CSSProperties}>
@@ -126,7 +126,7 @@ export function NeedsReviewList() {
         ))}
       </div>
 
-      {items.length > 2 && (
+      {items.length > 1 && (
         <button
           onClick={() => setExpanded((e) => !e)}
           className="w-full border-t border-dash-border p-2 text-xs font-medium text-dash-amber hover:bg-dash-surface-2"

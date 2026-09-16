@@ -93,7 +93,7 @@ export function DuplicateFlagList() {
   if (loading) return <p className="text-sm text-dash-muted">Memuat...</p>;
   if (flags.length === 0) return null;
 
-  const visible = expanded ? flags : flags.slice(0, 2);
+  const visible = expanded ? flags : flags.slice(0, 1);
 
   return (
     <div className="dash-card dash-card--action" style={{ "--accent": "var(--color-dash-red)" } as React.CSSProperties}>
@@ -128,7 +128,7 @@ export function DuplicateFlagList() {
         })}
       </div>
 
-      {flags.length > 2 && (
+      {flags.length > 1 && (
         <button
           onClick={() => setExpanded((e) => !e)}
           className="w-full border-t border-dash-border p-2 text-xs font-medium text-dash-amber hover:bg-dash-surface-2"

@@ -150,15 +150,36 @@ export async function getVersionHistory(db: Db, transaction_id: string) {
  * so the list always matches what the metrics actually count.
  * deleted_at IS NULL (7 Sept 2026, fitur Sampah): baris yang sudah dibuang
  * ke Sampah tidak boleh muncul di sini -- lihat halaman /trash untuk
- * lihat/pulihkan baris yang dibuang. */
-export async function listTransactions(db: Db, business_id: string, date?: string) {
-  const dateFilter = date ? `AND transaction_date = $2` : "";
-  const params = date ? [business_id, date] : [business_id];
+ * lihat/pulihkan baris yang dibuang.
+ *
+ * 15 Sept 2026: tambah filter source_id opsional -- dipakai halaman
+ * "Lihat Detail" per file di Data Inbox (lihat DataInboxList.tsx),
+ * supaya bisa lihat transaksi dari 1 batch upload tertentu saja, bukan
+ * cuma per tanggal. Kedua filter independen, bisa dipakai sendiri-sendiri
+ * atau bareng. */
+export async function listTransactions(
+  db: Db,
+  business_id: string,
+  date?: string,
+  source_id?: string
+) {
+  const params: string[] = [business_id];
+  const conditions: string[] = [];
+
+  if (date) {
+    params.push(date);
+    conditions.push(`AND transaction_date = $${params.length}`);
+  }
+  if (source_id) {
+    params.push(source_id);
+    conditions.push(`AND source_id = $${params.length}`);
+  }
+
   return db.all(
     `SELECT row_id, transaction_id, version, transaction_date, transaction_time,
               total_amount, line_item_count, status, channel, created_at, resolved_at
        FROM transactions
-       WHERE business_id = $1 AND status IN ('ACTIVE', 'NEEDS_REVIEW', 'VOID') AND deleted_at IS NULL ${dateFilter}
+       WHERE business_id = $1 AND status IN ('ACTIVE', 'NEEDS_REVIEW', 'VOID') AND deleted_at IS NULL ${conditions.join(" ")}
        ORDER BY transaction_date DESC, transaction_time DESC`,
     params
   );
