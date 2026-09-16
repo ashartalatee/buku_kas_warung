@@ -50,6 +50,7 @@ function formatDateTime(iso: string): string {
 
 export function ActivityLogList() {
   const [items, setItems] = useState<ActivityItem[] | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -68,7 +69,7 @@ export function ActivityLogList() {
   return (
     <div className="font-dash mx-auto flex max-w-2xl flex-col gap-4 p-4">
       <div>
-        <h1 className="text-lg font-semibold text-dash-text">Activity Log</h1>
+        <h1 className="text-lg font-semibold text-dash-text">Riwayat Aktivitas</h1>
         <p className="text-xs text-dash-muted">
           Riwayat koreksi, pembatalan, penyesuaian stok, upload, dan resolusi duplikat — 50 kejadian terbaru.
         </p>
@@ -84,7 +85,7 @@ export function ActivityLogList() {
 
       {items !== null && items.length > 0 && (
         <div className="flex flex-col gap-2">
-          {items.map((item) => (
+          {(expanded ? items : items.slice(0, 3)).map((item) => (
             <div
               key={item.id}
               className="dash-card p-3"
@@ -105,6 +106,14 @@ export function ActivityLogList() {
               </p>
             </div>
           ))}
+          {items.length > 3 && (
+            <button
+              onClick={() => setExpanded((e) => !e)}
+              className="dash-card p-2 text-xs font-medium text-dash-accent hover:bg-dash-surface-2"
+            >
+              {expanded ? "Tampilkan lebih sedikit" : `Tampilkan semua (${items.length})`}
+            </button>
+          )}
         </div>
       )}
     </div>

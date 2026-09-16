@@ -92,7 +92,7 @@ export function DataInboxList() {
 
   return (
     <div className="dash-card font-dash">
-      <p className="border-b border-dash-border p-4 text-sm font-medium text-dash-text">Data Inbox</p>
+      <p className="border-b border-dash-border p-4 text-sm font-medium text-dash-text">Riwayat Upload</p>
       {(expanded ? rows : rows.slice(0, 1)).map((row) => (
         <div key={row.source_id} className="border-b border-dash-border last:border-0">
           <div className="p-3">

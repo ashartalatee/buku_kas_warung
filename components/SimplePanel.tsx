@@ -19,6 +19,7 @@ import { TransactionCalendar } from "./TransactionCalendar";
 import { NeedsReviewList } from "./NeedsReviewList";
 import { DuplicateFlagList } from "./DuplicateFlagList";
 import { DataInboxList } from "./DataInboxList";
+import { ActivityLogList } from "./ActivityLogList";
 
 export function SimplePanel() {
   const router = useRouter();
@@ -77,6 +78,10 @@ export function SimplePanel() {
         <DuplicateFlagList />
 
         <TransactionCalendar />
+
+        <div className="dash-card p-4">
+          <ActivityLogList />
+        </div>
 
         {dashboardUrl && (
           
