@@ -14,7 +14,7 @@ import { getCurrentUser } from "../../_lib/session";
 
 export async function GET(req: NextRequest) {
   const date = req.nextUrl.searchParams.get("date") ?? getTodayLocalDate();
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const db = getDb();
   return NextResponse.json(await getDailyReport(db, user.business_id, date));
 }

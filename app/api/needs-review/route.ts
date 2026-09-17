@@ -6,7 +6,7 @@ import { getDb } from "@/app/api/_lib/db";
 import { getCurrentUser } from "@/app/api/_lib/session";
 
 export async function GET() {
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const db = getDb();
   return NextResponse.json(await getNeedsReviewQueue(db, user.business_id));
 }

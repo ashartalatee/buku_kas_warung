@@ -13,7 +13,7 @@ import { StockAdjustmentReason } from "@/lib/talatee-core/types";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ productId: string }> }) {
   const { productId } = await params;
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const db = getDb();
   const body = await req.json();
 

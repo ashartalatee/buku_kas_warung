@@ -11,7 +11,7 @@ import { getCurrentUser } from "@/app/api/_lib/session";
 export async function GET(req: NextRequest) {
   const date = req.nextUrl.searchParams.get("date") ?? undefined;
   const source_id = req.nextUrl.searchParams.get("source_id") ?? undefined;
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const db = getDb();
 
   const rows = (await listTransactions(db, user.business_id, date, source_id)) as any[];

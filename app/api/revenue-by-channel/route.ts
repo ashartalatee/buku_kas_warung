@@ -12,7 +12,7 @@ const VALID_PERIODS = ["day", "week", "month", "year"] as const;
 type Period = (typeof VALID_PERIODS)[number];
 
 export async function GET(req: NextRequest) {
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const db = getDb();
 
   const periodParam = req.nextUrl.searchParams.get("period") ?? "month";

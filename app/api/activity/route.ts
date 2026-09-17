@@ -11,7 +11,7 @@ import { getDb } from "../_lib/db";
 import { getCurrentUser } from "../_lib/session";
 
 export async function GET() {
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const db = getDb();
 
   try {

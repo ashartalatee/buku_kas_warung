@@ -12,7 +12,7 @@ import { getCurrentUser } from "@/app/api/_lib/session";
 export async function POST(req: NextRequest, { params }: { params: Promise<{ rowId: string }> }) {
   const { rowId } = await params;
   const body = await req.json();
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const db = getDb();
 
   try {

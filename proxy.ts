@@ -18,16 +18,31 @@
 // sesi (salah satu cukup), BUKAN cuma X-Api-Key seperti sebelumnya --
 // kalau dipaksa cuma X-Api-Key, upload lewat browser akan SELALU gagal
 // walau sudah login, karena browser tidak pernah kirim header itu.
+//
+// 15 Sept 2026 (multi-tenant): proxy sekarang SATU-SATUNYA tempat yang
+// menentukan business_id per request, lalu meneruskannya lewat header
+// x-talatee-business-id ke route handler (dibaca getCurrentUser(), lihat
+// app/api/_lib/session.ts). Sumbernya salah satu dari 3:
+//   - Cookie sesi (login password) -> business_id ada di dalam token
+//   - ?key=... di link WA -> business_id ada di dalam key itu sendiri
+//     (lihat createShareKey/verifyShareKeyAndGetBusinessId di auth.ts)
+//   - X-Api-Key dari n8n -> masih tied ke TALATEE_PILOT_BUSINESS_ID
+//     untuk sementara (WA multi-tenant belum dibangun, lihat sesi 15
+//     Sept 2026 -- WA disambungkan belakangan per business).
+// Route handler TIDAK PERNAH baca env var/cookie/key secara langsung --
+// selalu lewat header ini, supaya cuma ada 1 tempat yang perlu benar.
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import {
   verifySessionToken,
   verifyLocalApiKey,
-  verifyShareKey,
+  verifyShareKeyAndGetBusinessId,
   SESSION_COOKIE_NAME,
   PLATFORM_ADMIN_SESSION_ID,
 } from "./app/api/_lib/auth";
+
+const BUSINESS_ID_HEADER = "x-talatee-business-id";
 
 const N8N_ROUTES = [
   "/api/transactions/upload",
@@ -38,8 +53,8 @@ const N8N_ROUTES = [
 ];
 
 // Halaman/endpoint dashboard yang dibagikan lewat link WA -- dibuka
-// langsung tanpa login, tapi wajib ?key=... yang cocok dengan
-// DASHBOARD_SHARE_KEY (lihat auth.ts: verifyShareKey).
+// langsung tanpa login, tapi wajib ?key=... yang cocok (lihat
+// verifyShareKeyAndGetBusinessId di auth.ts).
 const SHARE_LINK_ROUTES = ["/dashboard", "/api/reports/overview"];
 
 const PUBLIC_ROUTES = ["/login", "/api/login"];
@@ -86,6 +101,14 @@ function invalidShareLinkPage(): NextResponse {
   });
 }
 
+/** Terusin request ke handler berikutnya, sambil menyisipkan business_id
+ * ke header supaya getCurrentUser() bisa membacanya. */
+function nextWithBusinessId(request: NextRequest, businessId: string): NextResponse {
+  const headers = new Headers(request.headers);
+  headers.set(BUSINESS_ID_HEADER, businessId);
+  return NextResponse.next({ request: { headers } });
+}
+
 export default function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -95,7 +118,8 @@ export default function proxy(request: NextRequest) {
 
   if (SHARE_LINK_ROUTES.some((p) => pathname === p)) {
     const key = request.nextUrl.searchParams.get("key");
-    if (!verifyShareKey(key)) {
+    const businessId = verifyShareKeyAndGetBusinessId(key);
+    if (!businessId) {
       if (pathname.startsWith("/api/")) {
         return NextResponse.json(
           { error: "Link tidak valid atau kadaluarsa. Minta link terbaru lewat WhatsApp." },
@@ -104,7 +128,7 @@ export default function proxy(request: NextRequest) {
       }
       return invalidShareLinkPage();
     }
-    return NextResponse.next();
+    return nextWithBusinessId(request, businessId);
   }
 
   if (N8N_ROUTES.some((p) => pathname === p)) {
@@ -114,18 +138,28 @@ export default function proxy(request: NextRequest) {
     // UI admin lewat browser (UploadCsvForm.tsx, pakai cookie sesi login,
     // bukan API key). Efeknya: upload lewat halaman Upload Data di admin
     // SELALU gagal dengan "X-Api-Key tidak valid" walau sudah login,
-    // karena browser memang tidak pernah kirim header X-Api-Key.
+    // karena browser memang tidak pernah kirim header itu.
     // Sekarang terima SALAH SATU: X-Api-Key valid (jalur n8n) ATAU cookie
     // sesi valid (jalur admin browser) -- bukan cuma satu-satunya jalur.
     const apiKey = request.headers.get("x-api-key");
     if (verifyLocalApiKey(apiKey)) {
-      return NextResponse.next();
+      // 15 Sept 2026: WA belum multi-tenant (lihat catatan atas file ini)
+      // -- n8n masih fixed ke 1 business lewat env var ini, sampai WA
+      // disambungkan per client di sesi berikutnya.
+      const fallbackBusinessId = process.env.TALATEE_PILOT_BUSINESS_ID;
+      if (!fallbackBusinessId) {
+        return NextResponse.json(
+          { error: "TALATEE_PILOT_BUSINESS_ID belum diset -- wajib untuk jalur n8n/WA." },
+          { status: 500 }
+        );
+      }
+      return nextWithBusinessId(request, fallbackBusinessId);
     }
 
     const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME)?.value;
-    const businessId = verifySessionToken(sessionCookie);
-    if (businessId) {
-      return NextResponse.next();
+    const businessIdFromSession = verifySessionToken(sessionCookie);
+    if (businessIdFromSession) {
+      return nextWithBusinessId(request, businessIdFromSession);
     }
 
     return NextResponse.json(
@@ -157,7 +191,7 @@ export default function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
-  return NextResponse.next();
+  return nextWithBusinessId(request, businessId);
 }
 
 export const config = {

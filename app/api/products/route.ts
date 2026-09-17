@@ -9,7 +9,7 @@ import { getDb } from "@/app/api/_lib/db";
 import { getCurrentUser } from "@/app/api/_lib/session";
 
 export async function GET(req: NextRequest) {
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const db = getDb();
   const includeInactive = req.nextUrl.searchParams.get("all") === "1";
   const products = await listProducts(db, user.business_id, { includeInactive });
@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const db = getDb();
   const body = await req.json();
 

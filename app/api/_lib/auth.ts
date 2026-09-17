@@ -65,20 +65,46 @@ export { SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS };
  * Pakai key terpisah dari TALATEE_API_KEY (itu punya Talatee, ini punya
  * n8n) supaya masing-masing bisa dirotasi sendiri-sendiri.
  */
+
 /**
- * Cek ?key=... di link dashboard yang dikirim lewat WA (/dashboard,
- * /api/reports/overview). Ini BUKAN pengganti login sungguhan -- cuma
- * "kunci pintu" ringan supaya link tidak kebuka sembarangan kalau
- * ke-forward/ke-screenshot orang lain, sambil tetap bisa dibuka
- * langsung dari WA tanpa perlu ketik password.
+ * 15 Sept 2026 -- diganti dari 1 DASHBOARD_SHARE_KEY global (env var) jadi
+ * key per-business, supaya 1 deployment bisa layani banyak client sekaligus
+ * (sebelumnya cuma 1 business bisa aktif per deployment). Key SEKARANG
+ * membawa identitas business_id-nya sendiri lewat tanda tangan HMAC --
+ * BUKAN disimpan di database -- konsisten dengan filosofi session token di
+ * atas (createSessionToken/verifySessionToken): stateless, tidak perlu
+ * query database buat verifikasi, sekaligus tidak bisa dipalsukan tanpa
+ * tahu SESSION_SECRET.
+ *
+ * Format: "<business_id>.<signature>" -- signature = HMAC dari
+ * "share:<business_id>", jadi 1 business_id SELALU menghasilkan share key
+ * yang SAMA setiap kali (deterministik) -- cocok dipakai berulang di link
+ * WA tanpa perlu simpan/generate ulang.
  */
-export function verifyShareKey(keyValue: string | null): boolean {
-  const expected = process.env.DASHBOARD_SHARE_KEY;
-  if (!expected || expected.length < 8) return false;
-  if (!keyValue) return false;
-  const a = Buffer.from(keyValue);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
+export function createShareKey(business_id: string): string {
+  const sig = sign(`share:${business_id}`);
+  return `${business_id}.${sig}`;
+}
+
+/** Verifikasi ?key=... dari link dashboard, return business_id kalau valid,
+ * null kalau tidak (rusak/dipalsukan). Dipakai proxy.ts (SHARE_LINK_ROUTES)
+ * dan getCurrentUser() untuk tahu "ini dashboard milik business mana",
+ * tanpa perlu cookie sesi maupun query database. */
+export function verifyShareKeyAndGetBusinessId(keyValue: string | null): string | null {
+  if (!keyValue) return null;
+  const dotIndex = keyValue.indexOf(".");
+  if (dotIndex === -1) return null;
+
+  const business_id = keyValue.slice(0, dotIndex);
+  const sig = keyValue.slice(dotIndex + 1);
+  const expected = sign(`share:${business_id}`);
+
+  const sigBuf = Buffer.from(sig);
+  const expectedBuf = Buffer.from(expected);
+  if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) {
+    return null;
+  }
+  return business_id;
 }
 
 export function verifyLocalApiKey(headerValue: string | null): boolean {

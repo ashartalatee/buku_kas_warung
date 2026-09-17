@@ -11,7 +11,7 @@ import { CorrectionReason } from "@/lib/talatee-core/types";
 export async function POST(req: NextRequest, { params }: { params: Promise<{ rowId: string }> }) {
   const { rowId } = await params;
   const body = await req.json();
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const db = getDb();
 
   const reason: CorrectionReason = body.reason ?? "Transaksi dibatalkan";

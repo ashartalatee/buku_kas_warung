@@ -16,7 +16,7 @@ import { getCurrentUser } from "@/app/api/_lib/session";
 export async function POST(req: NextRequest, { params }: { params: Promise<{ flagId: string }> }) {
   const { flagId } = await params;
   const body = await req.json();
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const db = getDb();
 
   if (!["CONFIRMED_DUPLICATE", "CONFIRMED_NEW"].includes(body.resolution)) {

@@ -8,7 +8,7 @@ import { getDb } from "@/app/api/_lib/db";
 import { getCurrentUser } from "@/app/api/_lib/session";
 
 export async function GET() {
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const db = getDb();
   const summary = await getRevenueSummaryPeriods(db, user.business_id);
   return NextResponse.json(summary);

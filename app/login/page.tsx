@@ -1,10 +1,17 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
-export default function LoginPage() {
+// 15 Sept 2026 (multi-tenant): baca ?biz=<business_id> dari URL -- tiap
+// client dapat link login sendiri (dikirim sekali lewat WA saat
+// onboarding), supaya tidak perlu dropdown pilih warung. Platform Admin
+// login tanpa ?biz= sama sekali (dicek server tanpa perlu business_id,
+// lihat app/api/login/route.ts).
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const businessId = searchParams.get("biz");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -17,17 +24,13 @@ export default function LoginPage() {
       const res = await fetch("/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ password, business_id: businessId ?? undefined }),
       });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error ?? "Gagal login.");
         return;
       }
-      // 12 Sept 2026: /ops (panel monitoring internal) dihapus dari repo
-      // ini -- Ashar sudah punya sistem monitoring terpisah. Semua login
-      // (Platform Admin maupun business owner) sekarang diarahkan ke "/"
-      // yang sama.
       router.replace("/");
       router.refresh();
     } catch {
@@ -62,5 +65,13 @@ export default function LoginPage() {
         </form>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   );
 }

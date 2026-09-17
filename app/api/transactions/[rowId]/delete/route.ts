@@ -9,7 +9,7 @@ import { getCurrentUser } from "@/app/api/_lib/session";
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ rowId: string }> }) {
   const { rowId } = await params;
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const db = getDb();
 
   try {

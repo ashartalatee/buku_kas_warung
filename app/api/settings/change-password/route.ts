@@ -11,7 +11,7 @@ import { getDb } from "../../_lib/db";
 import { hashPassword, verifyPassword } from "@/lib/talatee-core/password";
 
 export async function POST(req: NextRequest) {
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const db = getDb();
 
   let body: { current_password?: string; new_password?: string };

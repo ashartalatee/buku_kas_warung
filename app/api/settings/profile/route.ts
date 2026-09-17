@@ -6,7 +6,7 @@ import { getDb } from "../../_lib/db";
 const BUSINESS_TYPES = ["warung", "laundry", "bengkel"];
 
 export async function GET() {
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const db = getDb();
   const row = await db.get(
     `SELECT business_name, business_type, address, phone FROM businesses WHERE business_id = $1`,
@@ -17,7 +17,7 @@ export async function GET() {
 }
 
 export async function PATCH(req: NextRequest) {
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const db = getDb();
 
   let body: { business_name?: string; business_type?: string; address?: string; phone?: string };

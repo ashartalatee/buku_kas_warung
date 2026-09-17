@@ -9,7 +9,7 @@ import { getCurrentUser } from "@/app/api/_lib/session";
 
 export async function GET(req: NextRequest) {
   const date = req.nextUrl.searchParams.get("date") ?? getTodayLocalDate();
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const db = getDb();
 
   const metrics = await getDailyMetrics(db, user.business_id, date);

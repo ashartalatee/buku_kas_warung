@@ -13,7 +13,7 @@ import { getCurrentUser } from "../../_lib/session";
 import { getDb } from "../../_lib/db";
 
 export async function GET() {
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const db = getDb();
   const row = await db.get(`SELECT default_low_stock_threshold FROM businesses WHERE business_id = $1`, [
     user.business_id,
@@ -22,7 +22,7 @@ export async function GET() {
 }
 
 export async function PATCH(req: NextRequest) {
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const db = getDb();
 
   let body: { default_low_stock_threshold?: number | null };

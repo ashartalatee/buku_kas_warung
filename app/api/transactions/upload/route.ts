@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const db = getDb();
 
   const fileBuffer = Buffer.from(await file.arrayBuffer());

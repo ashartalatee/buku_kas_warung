@@ -10,7 +10,7 @@ import { getCurrentUser } from "@/app/api/_lib/session";
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ productId: string }> }) {
   const { productId } = await params;
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const db = getDb();
 
   try {

@@ -1,20 +1,22 @@
 // Root ("/") redirect ke dashboard, dilakukan di SERVER (bukan client)
 // supaya tidak ada roundtrip fetch() dari browser sebelum redirect
-// terjadi -- browser langsung terima instruksi redirect dari server,
-// lebih cepat daripada nunggu JS jalan dulu baru fetch baru redirect.
-// Proteksi login tetap sama seperti sebelumnya (proxy.ts sudah
-// memvalidasi cookie sesi sebelum request ini sampai ke sini).
+// terjadi. Upload dipindah ke /upload, tetap gampang diakses lewat
+// tombol "Upload Data" di dashboard.
+//
+// 15 Sept 2026 (multi-tenant): SEBELUMNYA baca DASHBOARD_SHARE_KEY env
+// var langsung -- itu key GLOBAL lama, sudah tidak berlaku sejak sistem
+// share key per-business dibuat hari ini (lihat auth.ts createShareKey).
+// BUG: file ini lupa ikut diupdate saat migrasi multi-tenant, jadi
+// sempat generate link dashboard yang ditolak proxy.ts. Sekarang pakai
+// getCurrentUser() + createShareKey() langsung di server -- konsisten
+// dengan /api/dashboard-link, sama cepatnya (tidak ada fetch tambahan).
 
 import { redirect } from "next/navigation";
+import { getCurrentUser } from "@/app/api/_lib/session";
+import { createShareKey } from "@/app/api/_lib/auth";
 
-export default function Page() {
-  const key = process.env.DASHBOARD_SHARE_KEY;
-
-  if (key && key.length >= 8) {
-    redirect(`/dashboard?key=${encodeURIComponent(key)}`);
-  }
-
-  // Fallback kalau DASHBOARD_SHARE_KEY belum diset -- jangan biarkan
-  // user terjebak di halaman kosong.
-  redirect("/upload");
+export default async function Page() {
+  const user = await getCurrentUser();
+  const key = createShareKey(user.business_id);
+  redirect(`/dashboard?key=${encodeURIComponent(key)}`);
 }

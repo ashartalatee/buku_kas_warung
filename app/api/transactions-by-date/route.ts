@@ -6,7 +6,7 @@ import { getDb } from "../_lib/db";
 import { getCurrentUser } from "../_lib/session";
 
 export async function GET(req: NextRequest) {
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const db = getDb();
 
   const date = req.nextUrl.searchParams.get("date");
