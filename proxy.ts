@@ -1,36 +1,16 @@
 // Ganti dari middleware.ts -> proxy.ts, karena file konvensi `middleware`
-// sudah deprecated di Next.js 16 versi project ini (lihat
-// node_modules/next/dist/docs/.../proxy.md). Perilakunya sama, cuma nama
-// file & fungsi yang beda.
+// sudah deprecated di Next.js 16 versi project ini.
 //
-// Dua jalur proteksi berbeda di sini, karena ada 2 jenis pemanggil:
-//   1. Pemilik warung lewat BROWSER  -> wajib cookie sesi (login password)
-//   2. Bot WA lewat n8n (server-to-server, tidak bisa login browser)
-//      -> wajib header X-Api-Key (N8N_LOCAL_API_KEY)
+// 15 Sept 2026 (multi-tenant): proxy SATU-SATUNYA tempat yang menentukan
+// business_id per request, diteruskan lewat header x-talatee-business-id.
 //
-// Endpoint yang dipanggil n8n (lihat n8n-workflows-updated/*.json):
-//   /api/transactions/upload, /api/reports/daily, /api/reports/weekly
-//
-// PENTING (fix 9 Sept 2026): beberapa endpoint di N8N_ROUTES di bawah ini
-// JUGA dipanggil langsung dari UI admin lewat browser (bukan cuma n8n) --
-// contoh nyata: /api/transactions/upload dipanggil UploadCsvForm.tsx pas
-// admin upload manual. Makanya N8N_ROUTES menerima X-Api-Key ATAU cookie
-// sesi (salah satu cukup), BUKAN cuma X-Api-Key seperti sebelumnya --
-// kalau dipaksa cuma X-Api-Key, upload lewat browser akan SELALU gagal
-// walau sudah login, karena browser tidak pernah kirim header itu.
-//
-// 15 Sept 2026 (multi-tenant): proxy sekarang SATU-SATUNYA tempat yang
-// menentukan business_id per request, lalu meneruskannya lewat header
-// x-talatee-business-id ke route handler (dibaca getCurrentUser(), lihat
-// app/api/_lib/session.ts). Sumbernya salah satu dari 3:
-//   - Cookie sesi (login password) -> business_id ada di dalam token
-//   - ?key=... di link WA -> business_id ada di dalam key itu sendiri
-//     (lihat createShareKey/verifyShareKeyAndGetBusinessId di auth.ts)
-//   - X-Api-Key dari n8n -> masih tied ke TALATEE_PILOT_BUSINESS_ID
-//     untuk sementara (WA multi-tenant belum dibangun, lihat sesi 15
-//     Sept 2026 -- WA disambungkan belakangan per business).
-// Route handler TIDAK PERNAH baca env var/cookie/key secara langsung --
-// selalu lewat header ini, supaya cuma ada 1 tempat yang perlu benar.
+// 16 Sept 2026 (nonaktifkan client): proxy JUGA yang cek is_active di
+// sini, SEBELUM request sampai ke halaman/route mana pun -- supaya
+// client yang dinonaktifkan langsung diarahkan ke /login dengan pesan
+// jelas, bukan macet di "Memuat..." di berpuluh komponen berbeda.
+// Sebelumnya pengecekan ini ada di session.ts (dipanggil tiap route
+// handler) -- dipindah ke sini supaya cuma 1 tempat, dan hasilnya
+// redirect yang rapi, bukan error mentah yang bikin fetch() gagal parse.
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
@@ -41,6 +21,7 @@ import {
   SESSION_COOKIE_NAME,
   PLATFORM_ADMIN_SESSION_ID,
 } from "./app/api/_lib/auth";
+import { getDb } from "./app/api/_lib/db";
 
 const BUSINESS_ID_HEADER = "x-talatee-business-id";
 
@@ -52,18 +33,19 @@ const N8N_ROUTES = [
   "/api/backup",
 ];
 
-// Halaman/endpoint dashboard yang dibagikan lewat link WA -- dibuka
-// langsung tanpa login, tapi wajib ?key=... yang cocok (lihat
-// verifyShareKeyAndGetBusinessId di auth.ts).
 const SHARE_LINK_ROUTES = ["/dashboard", "/api/reports/overview"];
 
 const PUBLIC_ROUTES = ["/login", "/api/login"];
 
-// Halaman yang dilihat kalau link WA salah/kadaluarsa. Ini titik kontak
-// client yang penting -- kalau tampilannya cuma teks polos, kesannya
-// aplikasi rusak. Jadi disamakan gaya visualnya (navy/krem/mono) dengan
-// app/dashboard/page.tsx, dibuat manual di sini (bukan render React)
-// karena proxy jalan di Edge Runtime sebelum masuk ke halaman React mana pun.
+async function isBusinessActive(businessId: string): Promise<boolean> {
+  if (businessId === PLATFORM_ADMIN_SESSION_ID) return true;
+  const db = getDb();
+  const row = (await db.get(`SELECT is_active FROM businesses WHERE business_id = $1`, [businessId])) as
+    | { is_active: boolean }
+    | undefined;
+  return !!row?.is_active;
+}
+
 function invalidShareLinkPage(): NextResponse {
   const html = `<!doctype html>
 <html lang="id">
@@ -101,15 +83,30 @@ function invalidShareLinkPage(): NextResponse {
   });
 }
 
-/** Terusin request ke handler berikutnya, sambil menyisipkan business_id
- * ke header supaya getCurrentUser() bisa membacanya. */
 function nextWithBusinessId(request: NextRequest, businessId: string): NextResponse {
   const headers = new Headers(request.headers);
   headers.set(BUSINESS_ID_HEADER, businessId);
   return NextResponse.next({ request: { headers } });
 }
 
-export default function proxy(request: NextRequest) {
+/** Client dinonaktifkan -- hapus cookie sesi lamanya (biar tidak nyangkut)
+ * dan arahkan ke /login dengan pesan jelas, bukan biarkan macet. */
+function redirectInactive(request: NextRequest): NextResponse {
+  const loginUrl = new URL("/login", request.url);
+  loginUrl.searchParams.set("reason", "inactive");
+  const res = NextResponse.redirect(loginUrl);
+  res.cookies.delete(SESSION_COOKIE_NAME);
+  return res;
+}
+
+function jsonInactive(): NextResponse {
+  return NextResponse.json(
+    { error: "Akun ini sudah tidak aktif. Hubungi Talatee untuk info lebih lanjut." },
+    { status: 403 }
+  );
+}
+
+export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (PUBLIC_ROUTES.some((p) => pathname === p)) {
@@ -128,24 +125,16 @@ export default function proxy(request: NextRequest) {
       }
       return invalidShareLinkPage();
     }
+    if (!(await isBusinessActive(businessId))) {
+      if (pathname.startsWith("/api/")) return jsonInactive();
+      return invalidShareLinkPage();
+    }
     return nextWithBusinessId(request, businessId);
   }
 
   if (N8N_ROUTES.some((p) => pathname === p)) {
-    // FIX (9 Sept 2026): rute ini SEBELUMNYA cuma menerima X-Api-Key,
-    // padahal beberapa di antaranya (khususnya /api/transactions/upload)
-    // dipanggil dari 2 arah -- n8n (server-to-server) DAN langsung dari
-    // UI admin lewat browser (UploadCsvForm.tsx, pakai cookie sesi login,
-    // bukan API key). Efeknya: upload lewat halaman Upload Data di admin
-    // SELALU gagal dengan "X-Api-Key tidak valid" walau sudah login,
-    // karena browser memang tidak pernah kirim header itu.
-    // Sekarang terima SALAH SATU: X-Api-Key valid (jalur n8n) ATAU cookie
-    // sesi valid (jalur admin browser) -- bukan cuma satu-satunya jalur.
     const apiKey = request.headers.get("x-api-key");
     if (verifyLocalApiKey(apiKey)) {
-      // 15 Sept 2026: WA belum multi-tenant (lihat catatan atas file ini)
-      // -- n8n masih fixed ke 1 business lewat env var ini, sampai WA
-      // disambungkan per client di sesi berikutnya.
       const fallbackBusinessId = process.env.TALATEE_PILOT_BUSINESS_ID;
       if (!fallbackBusinessId) {
         return NextResponse.json(
@@ -159,6 +148,7 @@ export default function proxy(request: NextRequest) {
     const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME)?.value;
     const businessIdFromSession = verifySessionToken(sessionCookie);
     if (businessIdFromSession) {
+      if (!(await isBusinessActive(businessIdFromSession))) return jsonInactive();
       return nextWithBusinessId(request, businessIdFromSession);
     }
 
@@ -182,11 +172,11 @@ export default function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // 12 Sept 2026: /ops (Panel Admin Lengkap) HANYA untuk Platform Admin
-  // (Ashar sendiri) -- BUKAN untuk business owner/client biasa, walau
-  // sesi mereka valid. Sebelum ini, /ops cuma "tersembunyi" (tidak ada
-  // link ke situ), bukan benar-benar terkunci -- client yang iseng coba
-  // alamat itu bisa masuk. Sekarang benar-benar ditolak di level proxy.
+  if (!(await isBusinessActive(businessId))) {
+    if (pathname.startsWith("/api/")) return jsonInactive();
+    return redirectInactive(request);
+  }
+
   if (pathname.startsWith("/ops") && businessId !== PLATFORM_ADMIN_SESSION_ID) {
     return NextResponse.redirect(new URL("/", request.url));
   }
@@ -196,7 +186,6 @@ export default function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Semua path KECUALI file statis Next.js dan aset di /public
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|csv)$).*)",
   ],
 };

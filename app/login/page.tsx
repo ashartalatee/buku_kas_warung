@@ -12,6 +12,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const businessId = searchParams.get("biz");
+  const reason = searchParams.get("reason");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -45,6 +46,11 @@ function LoginForm() {
       <div className="ledger-card w-full max-w-xs p-6">
         <h1 className="text-lg font-semibold text-ink">Buku Kas Warung</h1>
         <p className="mt-1 mb-5 text-sm text-muted">Masukkan password untuk membuka panel admin.</p>
+        {reason === "inactive" && (
+          <p className="mb-3 rounded bg-ledger-red/10 px-3 py-2 text-xs text-ledger-red">
+            Akun ini sudah tidak aktif. Hubungi Talatee untuk info lebih lanjut.
+          </p>
+        )}
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <input
             type="password"
