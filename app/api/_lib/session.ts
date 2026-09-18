@@ -1,22 +1,25 @@
 // Copy this file to: app/api/_lib/session.ts
 //
-// 15 Sept 2026 (multi-tenant): business_id SEKARANG dibaca dari header
+// 15 Sept 2026 (multi-tenant): business_id dibaca dari header
 // x-talatee-business-id, yang di-set proxy.ts SETELAH proxy itu sendiri
 // memvalidasi cookie sesi / share key / X-Api-Key (lihat catatan lengkap
-// di proxy.ts). File ini TIDAK melakukan validasi apa pun sendiri --
-// proxy.ts sudah menjamin header ini cuma ada isinya kalau request itu
-// memang sudah lolos salah satu dari 3 jalur otentikasi yang sah.
+// di proxy.ts).
 //
-// user_identifier tetap dari env var untuk sementara (WA/n8n belum
-// multi-tenant, lihat proxy.ts) -- field ini cuma dipakai untuk
-// mencatat "siapa yang melakukan aksi" (created_by/performed_by), bukan
-// untuk keamanan, jadi tidak mendesak untuk diubah sekarang.
+// 16 Sept 2026 (nonaktifkan client): SEKARANG juga cek is_active di
+// database pada SETIAP request -- bukan cuma saat login. Ini penting:
+// kalau cuma dicek waktu login, client yang SUDAH login sebelum
+// dinonaktifkan bisa tetap pakai sesi lamanya sampai 30 hari (durasi
+// cookie). Dengan cek di sini, begitu admin nonaktifkan client lewat
+// /ops/clients, request berikutnya dari client itu (walau cookie-nya
+// masih valid secara tanda tangan) langsung ditolak.
 
 import { headers } from "next/headers";
+import { getDb } from "./db";
+import { PLATFORM_ADMIN_SESSION_ID } from "./auth";
 
 export interface CurrentUser {
   business_id: string;
-  user_identifier: string; // e.g. email or WA number; stored as created_by/performed_by
+  user_identifier: string;
   role: "OWNER";
 }
 
@@ -25,15 +28,22 @@ export async function getCurrentUser(): Promise<CurrentUser> {
   const business_id = headerList.get("x-talatee-business-id");
 
   if (!business_id) {
-    // Ini seharusnya TIDAK PERNAH terjadi kalau proxy.ts jalan normal --
-    // setiap route yang butuh getCurrentUser() sudah pasti lolos proxy
-    // dulu (proxy.ts matcher mencakup semua path kecuali aset statis).
-    // Kalau sampai ke sini, berarti ada bug di proxy.ts atau route ini
-    // sengaja di-skip dari matcher -- gagal keras, bukan diam-diam pakai
-    // business_id sembarangan.
     throw new Error(
       "business_id tidak ditemukan di header request. Ini bug -- seharusnya proxy.ts selalu mengisi header ini sebelum request sampai ke sini."
     );
+  }
+
+  // Platform Admin bukan baris di tabel businesses -- lewati pengecekan
+  // is_active, tidak relevan untuknya.
+  if (business_id !== PLATFORM_ADMIN_SESSION_ID) {
+    const db = getDb();
+    const row = (await db.get(`SELECT is_active FROM businesses WHERE business_id = $1`, [business_id])) as
+      | { is_active: boolean }
+      | undefined;
+
+    if (!row || !row.is_active) {
+      throw new Error("Akun ini sudah tidak aktif. Hubungi Talatee untuk info lebih lanjut.");
+    }
   }
 
   return {

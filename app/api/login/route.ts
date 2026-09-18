@@ -61,11 +61,19 @@ export async function POST(req: NextRequest) {
 
   const db = getDb();
   const row = (await db.get(
-    `SELECT business_id, password_hash FROM businesses WHERE business_id = $1 AND password_hash IS NOT NULL`,
+    `SELECT business_id, password_hash, is_active FROM businesses WHERE business_id = $1 AND password_hash IS NOT NULL`,
     [body.business_id]
-  )) as { business_id: string; password_hash: string | null } | undefined;
+  )) as { business_id: string; password_hash: string | null; is_active: boolean } | undefined;
 
   if (!row || !verifyPassword(body.password, row.password_hash)) {
+    return NextResponse.json({ error: "Password salah." }, { status: 401 });
+  }
+
+  // 16 Sept 2026: client yang dinonaktifkan (lihat /ops/clients) ditolak
+  // di sini juga, bukan cuma disembunyikan dari daftar -- pesan generik
+  // sama seperti "Password salah" supaya tidak membocorkan status akun
+  // ke orang yang cuma coba-coba password.
+  if (!row.is_active) {
     return NextResponse.json({ error: "Password salah." }, { status: 401 });
   }
 

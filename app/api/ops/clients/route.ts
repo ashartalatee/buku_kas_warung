@@ -1,15 +1,9 @@
 // Copy to: app/api/ops/clients/route.ts
 //
-// CRUD sederhana untuk kelola business/client -- CUMA bisa diakses
-// Platform Admin (Ashar), dijaga proxy.ts (pathname.startsWith("/ops")
-// sudah ditolak untuk business owner biasa walau sesinya valid).
-//
-// POST: bikin client baru -- generate password acak, hash, simpan,
-// return password PLAINTEXT satu kali saja (tidak pernah disimpan/
-// ditampilkan lagi setelah ini, sama seperti pola API key kebanyakan
-// layanan -- admin WAJIB catat sekarang).
-// GET: daftar semua client yang sudah ada (tanpa password, cuma info
-// dasar) supaya admin bisa lihat/copy link login kapan saja.
+// CRUD sederhana untuk kelola business/client -- CUMA Platform Admin.
+// POST: bikin client baru, return password plaintext SEKALI SAJA.
+// GET: daftar semua client (termasuk is_active, supaya UI bisa tampilkan
+// status Aktif/Nonaktif dan tombol yang sesuai).
 
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
@@ -26,7 +20,7 @@ async function requirePlatformAdmin() {
 }
 
 function randomPassword(): string {
-  return randomBytes(6).toString("hex"); // 12 karakter, gampang diketik manual kalau perlu
+  return randomBytes(6).toString("hex");
 }
 
 export async function GET() {
@@ -38,7 +32,8 @@ export async function GET() {
 
   const db = getDb();
   const rows = await db.all(
-    `SELECT business_id, business_name, business_type, created_at
+    `SELECT business_id, business_name, business_type, is_active, created_at,
+            (SELECT COUNT(*)::int FROM transactions t WHERE t.business_id = businesses.business_id) as transaction_count
        FROM businesses
       WHERE password_hash IS NOT NULL
       ORDER BY created_at DESC`
@@ -60,7 +55,7 @@ export async function POST(req: NextRequest) {
   if (!name) {
     return NextResponse.json({ error: "Nama client wajib diisi." }, { status: 400 });
   }
-  if (!["warung", "laundry", "bengkel"].includes(type)) {
+  if (!["warung", "laundry", "bengkel", "marketplace"].includes(type)) {
     return NextResponse.json({ error: "Jenis usaha tidak valid." }, { status: 400 });
   }
 

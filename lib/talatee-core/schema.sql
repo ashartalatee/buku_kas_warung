@@ -17,7 +17,8 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE TABLE IF NOT EXISTS businesses (
     business_id     TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     business_name   TEXT NOT NULL,
-    business_type   TEXT NOT NULL CHECK (business_type IN ('warung', 'laundry', 'bengkel')),
+    business_type   TEXT NOT NULL CHECK (business_type IN ('warung', 'laundry', 'bengkel', 'marketplace')),
+    is_active       BOOLEAN NOT NULL DEFAULT true,
     password_hash   TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
