@@ -1,9 +1,4 @@
 // Copy to: app/api/ops/clients/[businessId]/toggle-active/route.ts
-//
-// Nonaktifkan/aktifkan client -- REVERSIBEL. Client nonaktif langsung
-// ditolak di login (route.ts) DAN di setiap request lain (session.ts),
-// tanpa perlu logout paksa manual -- lihat catatan di session.ts.
-
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/app/api/_lib/session";
 import { PLATFORM_ADMIN_SESSION_ID } from "@/app/api/_lib/auth";
@@ -20,7 +15,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ bus
   const isActive = Boolean(body.is_active);
 
   const db = getDb();
+
+  const biz = (await db.get(`SELECT business_name FROM businesses WHERE business_id = $1`, [
+    businessId,
+  ])) as { business_name: string } | undefined;
+
   await db.run(`UPDATE businesses SET is_active = $1 WHERE business_id = $2`, [isActive, businessId]);
+
+  await db.run(
+    `INSERT INTO admin_audit_log (action, target_business_id, target_business_name, performed_by)
+     VALUES ($1, $2, $3, 'platform_admin')`,
+    [isActive ? "ACTIVATE" : "DEACTIVATE", businessId, biz?.business_name ?? businessId]
+  );
 
   return NextResponse.json({ ok: true, is_active: isActive });
 }

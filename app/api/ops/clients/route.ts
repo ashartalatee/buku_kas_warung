@@ -1,10 +1,4 @@
 // Copy to: app/api/ops/clients/route.ts
-//
-// CRUD sederhana untuk kelola business/client -- CUMA Platform Admin.
-// POST: bikin client baru, return password plaintext SEKALI SAJA.
-// GET: daftar semua client (termasuk is_active, supaya UI bisa tampilkan
-// status Aktif/Nonaktif dan tombol yang sesuai).
-
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { getCurrentUser } from "@/app/api/_lib/session";
@@ -69,6 +63,12 @@ export async function POST(req: NextRequest) {
      RETURNING business_id`,
     [name, type, hash]
   )) as { business_id: string };
+
+  await db.run(
+    `INSERT INTO admin_audit_log (action, target_business_id, target_business_name, performed_by)
+     VALUES ('CREATE_CLIENT', $1, $2, 'platform_admin')`,
+    [row.business_id, name]
+  );
 
   return NextResponse.json({
     business_id: row.business_id,

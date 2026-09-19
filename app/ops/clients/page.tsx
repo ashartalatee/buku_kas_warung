@@ -11,6 +11,29 @@ interface ClientRow {
   created_at: string;
 }
 
+interface AuditLogEntry {
+  log_id: string;
+  action: "CREATE_CLIENT" | "ACTIVATE" | "DEACTIVATE" | "DELETE_CLIENT";
+  target_business_name: string;
+  performed_by: string;
+  created_at: string;
+}
+
+const ACTION_LABEL: Record<AuditLogEntry["action"], string> = {
+  CREATE_CLIENT: "Membuat client",
+  ACTIVATE: "Mengaktifkan",
+  DEACTIVATE: "Menonaktifkan",
+  DELETE_CLIENT: "Menghapus client",
+};
+
+function formatLogTime(iso: string): string {
+  const d = new Date(iso);
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "numeric", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta",
+  }).format(d);
+}
+
 interface NewClientResult {
   business_id: string;
   business_name: string;
@@ -26,10 +49,17 @@ export default function ClientsAdminPage() {
   const [justCreated, setJustCreated] = useState<NewClientResult | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [auditLog, setAuditLog] = useState<AuditLogEntry[] | null>(null);
+  const [showLog, setShowLog] = useState(false);
 
   async function load() {
     const res = await fetch("/api/ops/clients");
     setClients(await res.json());
+  }
+
+  async function loadAuditLog() {
+    const res = await fetch("/api/ops/audit-log");
+    setAuditLog(await res.json());
   }
 
   useEffect(() => {
@@ -84,10 +114,45 @@ export default function ClientsAdminPage() {
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6 p-6 font-sans">
-      <div>
-        <h1 className="text-xl font-bold text-ink">Kelola Client</h1>
-        <p className="text-sm text-muted">Tambah client baru, atau lihat daftar client yang sudah ada.</p>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h1 className="text-xl font-bold text-ink">Kelola Client</h1>
+          <p className="text-sm text-muted">Tambah client baru, atau lihat daftar client yang sudah ada.</p>
+        </div>
+        <button
+          onClick={() => {
+            setShowLog((s) => !s);
+            if (!auditLog) loadAuditLog();
+          }}
+          className="shrink-0 rounded border border-rule px-3 py-1.5 text-xs font-medium text-ink hover:bg-cream"
+        >
+          {showLog ? "Tutup Riwayat" : "Riwayat Aksi"}
+        </button>
       </div>
+
+      {showLog && (
+        <div className="ledger-card p-4">
+          <p className="mb-3 text-sm font-semibold text-ink">Riwayat Aksi Admin (50 terbaru)</p>
+          {auditLog === null ? (
+            <p className="text-sm text-muted">Memuat...</p>
+          ) : auditLog.length === 0 ? (
+            <p className="text-sm text-muted">Belum ada aksi tercatat.</p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {auditLog.map((entry) => (
+                <div key={entry.log_id} className="border-b border-rule pb-2 text-xs last:border-0">
+                  <span className="font-medium text-ink">{ACTION_LABEL[entry.action]}</span>
+                  {" -- "}
+                  <span className="text-ink">{entry.target_business_name}</span>
+                  <p className="text-muted">
+                    {formatLogTime(entry.created_at)} oleh {entry.performed_by}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <form onSubmit={submit} className="ledger-card flex flex-col gap-3 p-4">
         <p className="text-sm font-semibold text-ink">Tambah Client Baru</p>

@@ -251,3 +251,17 @@ CREATE TABLE IF NOT EXISTS login_attempts (
     locked_until  TIMESTAMPTZ,
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Log audit aksi admin terhadap client (16 Sept 2026) -- siapa
+-- buat/nonaktifkan/aktifkan/hapus client mana, kapan. Penting kalau
+-- nanti ada lebih dari 1 orang yang kelola /ops/clients. target_business_name
+-- disimpan terpisah (bukan cuma JOIN ke businesses) supaya riwayat tetap
+-- terbaca jelas walau client itu sudah dihapus permanen.
+CREATE TABLE IF NOT EXISTS admin_audit_log (
+    log_id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    action               TEXT NOT NULL CHECK (action IN ('CREATE_CLIENT', 'ACTIVATE', 'DEACTIVATE', 'DELETE_CLIENT')),
+    target_business_id    TEXT NOT NULL,
+    target_business_name   TEXT NOT NULL,
+    performed_by             TEXT NOT NULL,
+    created_at                TIMESTAMPTZ NOT NULL DEFAULT now()
+);

@@ -1,10 +1,4 @@
 // Copy to: app/api/ops/clients/[businessId]/route.ts
-//
-// DELETE -- hapus client PERMANEN. Ditolak kalau client itu sudah punya
-// transaksi tersimpan (sengaja fail-closed, supaya tidak ada yang
-// kehapus tanpa sengaja) -- untuk client yang sudah pernah pakai tapi
-// mau dihentikan, pakai Nonaktifkan (reversibel), BUKAN Hapus.
-
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/app/api/_lib/session";
 import { PLATFORM_ADMIN_SESSION_ID } from "@/app/api/_lib/auth";
@@ -32,6 +26,17 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ busin
     );
   }
 
+  const biz = (await db.get(`SELECT business_name FROM businesses WHERE business_id = $1`, [
+    businessId,
+  ])) as { business_name: string } | undefined;
+
   await db.run(`DELETE FROM businesses WHERE business_id = $1`, [businessId]);
+
+  await db.run(
+    `INSERT INTO admin_audit_log (action, target_business_id, target_business_name, performed_by)
+     VALUES ('DELETE_CLIENT', $1, $2, 'platform_admin')`,
+    [businessId, biz?.business_name ?? businessId]
+  );
+
   return NextResponse.json({ ok: true });
 }
