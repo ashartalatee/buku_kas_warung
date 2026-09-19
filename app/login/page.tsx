@@ -32,6 +32,10 @@ function LoginForm() {
         setError(data.error ?? "Gagal login.");
         return;
       }
+      if (res.status === 429) {
+        setError(data.error);
+        return;
+      }
       router.replace("/");
       router.refresh();
     } catch {

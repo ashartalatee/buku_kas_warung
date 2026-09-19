@@ -239,3 +239,15 @@ CREATE TABLE IF NOT EXISTS stock_adjustments (
 );
 
 CREATE INDEX IF NOT EXISTS idx_stock_adjustments_product ON stock_adjustments(product_id, performed_at DESC);
+-- Rate limiting login (16 Sept 2026) -- mencegah brute-force password.
+-- identifier = business_id (client) atau '__platform_admin__' (admin).
+-- 5 kali gagal berturut-turut -> terkunci 15 menit. Sukses login reset
+-- ke 0. Tidak pakai IP address (bisa dipalsukan/shared NAT), cukup
+-- per-akun -- sesuai dengan model ancaman "orang coba tebak password 1
+-- link tertentu", bukan DDoS skala besar.
+CREATE TABLE IF NOT EXISTS login_attempts (
+    identifier    TEXT PRIMARY KEY,
+    failed_count  INTEGER NOT NULL DEFAULT 0,
+    locked_until  TIMESTAMPTZ,
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
